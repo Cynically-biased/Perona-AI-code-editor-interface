@@ -1,6 +1,5 @@
-function createTerminal(size = {}) {
+function createTerminal() {
   const terminal = new Terminal({
-    ...size,
     cursorBlink: true, fontFamily: 'Cascadia Mono, Consolas, monospace',
     fontSize: 13, scrollback: 5000,
     theme: {
@@ -31,6 +30,54 @@ function createTerminal(size = {}) {
     return false;
   });
   return { terminal, fit };
+}
+
+function configureChatInput(session) {
+  let pendingLines = 0;
+  let scrolling = false;
+  async function scroll() {
+    scrolling = true;
+    try {
+      while (session.running && pendingLines) {
+        const lines = pendingLines;
+        pendingLines = 0;
+        await window.desk.scrollChat(session.id, lines);
+      }
+    } catch (error) {
+      pendingLines = 0;
+      if (session.running) setError(error);
+    } finally {
+      scrolling = false;
+    }
+  }
+  // Capture wheel input before xterm can translate it into terminal keys.
+  // That keeps scroll gestures from recalling prompts with Arrow Up.
+  const onWheel = event => {
+    if (!event.deltaY) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (!session.running) return;
+    const lineHeight = 32;
+    const delta = event.deltaMode === WheelEvent.DOM_DELTA_LINE
+      ? event.deltaY
+      : event.deltaY / lineHeight;
+    const steps = Math.max(1, Math.min(60, Math.ceil(Math.abs(delta))));
+    pendingLines = Math.max(-60, Math.min(60, pendingLines + Math.sign(delta) * steps));
+    if (!scrolling) scroll();
+  };
+  const onKeyDown = event => {
+    if (event.key !== 'Enter' || (!event.shiftKey && !event.ctrlKey)
+        || event.altKey || event.metaKey || event.isComposing) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (session.running) window.desk.newlineChat(session.id).catch(setError);
+  };
+  session.body.addEventListener('wheel', onWheel, { capture: true, passive: false });
+  session.body.addEventListener('keydown', onKeyDown, true);
+  session.disposeChatInput = () => {
+    session.body.removeEventListener('wheel', onWheel, true);
+    session.body.removeEventListener('keydown', onKeyDown, true);
+  };
 }
 
 function fitTerminal(body, fit) {

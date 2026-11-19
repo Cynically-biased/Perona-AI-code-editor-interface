@@ -31,7 +31,8 @@ The tabs above each project session keep conversation and project information se
 
 - **Chat** is the agent's interactive terminal styled for Perona. Enter
   prompts and slash commands, such as `/model`, directly in the CLI. Sign-in
-  prompts and approvals appear here as well.
+  prompts and approvals appear here as well. Scroll to read earlier output.
+  Press Shift+Enter or Ctrl+Enter to insert a newline, and Enter to submit.
 - **Workflow** shows recorded commands, tool calls, file changes, and progress.
 - **Files** browses the session's project folder. Open a text or code file to edit
   it in Monaco with line numbers, syntax highlighting, folding, multiple tabs,

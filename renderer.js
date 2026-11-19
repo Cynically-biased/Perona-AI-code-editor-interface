@@ -77,6 +77,7 @@ function setError(error) {
 
 function removeSession(session) {
   sessions.delete(session.id);
+  session.disposeChatInput?.();
   session.observer.disconnect();
   session.terminal.dispose();
   session.shell?.observer.disconnect();
@@ -389,6 +390,7 @@ async function startSession(chat, project, record, usePickedFolder) {
   const session = { id, chat, folder, project, record, extra, agent: record.agent ?? chat.agent,
     body, terminal, observer, view, running: false, ended: false };
   configureWorkspace(session);
+  configureChatInput(session);
   terminal.open(body);
   observer.observe(body);
   resize();

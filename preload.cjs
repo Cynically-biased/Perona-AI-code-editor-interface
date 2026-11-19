@@ -45,6 +45,8 @@ contextBridge.exposeInMainWorld('desk', {
   gitAction: (id, action, data) => ipcRenderer.invoke('git-action', id, action, data),
   gitCreatePage: provider => ipcRenderer.invoke('git-create-page', provider),
   input: (id, data) => ipcRenderer.invoke('chat-input', id, data),
+  scrollChat: (id, lines) => ipcRenderer.invoke('chat-scroll', id, lines),
+  newlineChat: id => ipcRenderer.invoke('chat-newline', id),
   resize: (id, cols, rows) => ipcRenderer.invoke('chat-resize', id, cols, rows),
   close: id => ipcRenderer.invoke('close-chat', id),
   onData: callback => ipcRenderer.on('chat-data', (_event, ...args) => callback(...args)),

@@ -15,6 +15,7 @@ const { listFolder, previewFile, saveFile, createEntry, moveEntry, removeEntry, 
 
 const run = promisify(execFile);
 const chats = new Map();
+const chatControls = new Map();
 const projectShells = new Map();
 const projects = new Map();
 const starting = new Map();
@@ -145,7 +146,7 @@ async function startChat(id, agent, cwd, cols, rows, chatId, knownThread) {
   const thread = resumeThread(id, agent, cwd, knownThread);
   const args = agent === 'claude'
     ? (thread ? ['--resume', thread] : ['--session-id', id])
-    : ['-c', "tui.status_line=['model-with-reasoning','current-dir','session-id']"];
+    : ['--no-alt-screen', '-c', "tui.status_line=['model-with-reasoning','current-dir','session-id']"];
   if (agent === 'codex' && thread) args.push('resume', thread);
   const script = [
     "$ErrorActionPreference = 'Stop'",
@@ -165,15 +166,17 @@ async function startChat(id, agent, cwd, cols, rows, chatId, knownThread) {
     providerId => workspace.rememberThread(chatId, id, providerId));
   let terminal;
   try {
-    await run(tmux, tmuxArgs(id, 'new-session', '-d', '-s', id, '-n', agent,
+    // The Windows tmux port crashes when rendering OSC 8 hyperlinks.
+    // Disable the alternate screen before opening the pane so output enters scrollback.
+    await run(tmux, tmuxArgs(id, 'start-server',
+      ';', 'set-option', '-sa', 'terminal-overrides', ',*:Hls@',
+      ';', 'set-option', '-g', 'status-style', 'fg=#f9dce8,bg=#472333',
+      ';', 'set-option', '-g', 'window-style', 'fg=#fff0e7,bg=#1b121a',
+      ';', 'set-option', '-gw', 'alternate-screen', 'off',
+      ';', 'new-session', '-d', '-s', id, '-n', agent,
       '-x', String(cols), '-y', String(rows),
       'powershell.exe', '-NoProfile', '-EncodedCommand', encoded),
     { windowsHide: true, timeout: 5000, cwd, env });
-    // The Windows tmux port crashes when rendering OSC 8 hyperlinks.
-    await run(tmux, tmuxArgs(id, 'set-option', '-sa', 'terminal-overrides', ',*:Hls@',
-      ';', 'set-option', '-g', 'status-style', 'fg=#f9dce8,bg=#472333',
-      ';', 'set-option', '-g', 'window-style', 'fg=#fff0e7,bg=#1b121a'),
-      { windowsHide: true, timeout: 3000 });
     terminal = pty.spawn(tmux, tmuxArgs(id, 'attach-session', '-t', id),
       { name: 'xterm-256color', cols, rows, cwd, env });
   } catch (error) {
@@ -191,8 +194,39 @@ async function startChat(id, agent, cwd, cols, rows, chatId, knownThread) {
   });
 }
 
+function queueChatControl(id, control) {
+  const terminal = chats.get(id);
+  if (!terminal) return;
+  const next = (chatControls.get(id) ?? Promise.resolve()).catch(() => {}).then(() => {
+    if (chats.get(id) === terminal) return control(terminal);
+  });
+  chatControls.set(id, next);
+  return next.finally(() => {
+    if (chatControls.get(id) === next) chatControls.delete(id);
+  });
+}
+
 register('chat-input', (id, data) => {
-  if (typeof data === 'string') chats.get(id)?.write(data);
+  if (typeof data !== 'string') return;
+  if (chatControls.has(id)) return queueChatControl(id, terminal => terminal.write(data));
+  chats.get(id)?.write(data);
+});
+register('chat-scroll', (id, lines) => {
+  if (!chats.has(id) || !Number.isInteger(lines) || !lines) return;
+  const count = Math.min(60, Math.abs(lines));
+  const scroll = 'send-keys -X -N ' + count + (lines < 0 ? ' scroll-up' : ' scroll-down');
+  const enterCopyMode = lines < 0 ? 'copy-mode -e ; ' + scroll : '';
+  return queueChatControl(id, () =>
+    run(tmux, tmuxArgs(id, 'if-shell', '-F', '-t', id, '#{pane_in_mode}', scroll, enterCopyMode),
+      { windowsHide: true, timeout: 3000 }));
+});
+register('chat-newline', id => {
+  if (!chats.has(id)) return;
+  // Send the agents' native Alt+Enter chord directly to the tmux pane.
+  const newline = 'send-keys M-Enter';
+  return queueChatControl(id, () =>
+    run(tmux, tmuxArgs(id, 'if-shell', '-F', '-t', id, '#{pane_in_mode}',
+      'send-keys -X cancel ; ' + newline, newline), { windowsHide: true, timeout: 3000 }));
 });
 register('chat-resize', (id, cols, rows) => {
   if (size(cols, rows)) chats.get(id)?.resize(cols, rows);
