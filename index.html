@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Perona</title>
+  <link rel="stylesheet" href="node_modules/@xterm/xterm/css/xterm.css">
+  <link rel="stylesheet" href="style.css">
+  <script defer src="node_modules/@xterm/xterm/lib/xterm.js"></script>
+  <script defer src="node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
+  <script defer src="node_modules/monaco-editor/min/vs/loader.js"></script>
+  <script defer src="editor.js"></script>
+  <script defer src="tools.js"></script>
+  <script defer src="git.js"></script>
+  <script defer src="terminal-ui.js"></script>
+  <script defer src="dock-model.js"></script>
+  <script defer src="dock.js"></script>
+  <script defer src="workspace.js"></script>
+  <script defer src="renderer.js"></script>
+  <script defer src="perona-pet.js"></script>
+</head>
+<body>
+  <header class="toolbar">
+    <h1><img class="brand-portrait" src="perona.png" width="36" height="36" alt="">Perona</h1>
+    <button id="open-monitor" class="app-tool" type="button">Agents</button>
+    <button id="open-services" class="app-tool" type="button">Services</button>
+    <div class="window-controls" role="group" aria-label="Window controls">
+      <button id="window-minimize" class="window-control" type="button" aria-label="Minimize window" title="Minimize"><span aria-hidden="true"></span></button>
+      <button id="window-maximize" class="window-control" type="button" aria-label="Maximize window" title="Maximize"><span aria-hidden="true"></span></button>
+      <button id="window-close" class="window-control" type="button" aria-label="Close window" title="Close"><span aria-hidden="true"></span></button>
+    </div>
+  </header>
+  <p id="error" role="alert" hidden></p>
+  <div class="workspace">
+    <aside class="sidebar" aria-label="Manage chats">
+      <section class="agent" aria-labelledby="codex-heading">
+        <header>
+          <h2 id="codex-heading"><img src="codex-logo.png" width="22" height="22" alt="">Codex</h2>
+          <button id="codex" type="button" aria-label="New Codex chat" title="New Codex chat">+ New</button>
+        </header>
+        <ul id="codex-chats"></ul>
+      </section>
+      <section class="agent" aria-labelledby="claude-heading">
+        <header>
+          <h2 id="claude-heading"><img src="claude-logo.png" width="22" height="22" alt="">Claude</h2>
+          <button id="claude" type="button" aria-label="New Claude chat" title="New Claude chat">+ New</button>
+        </header>
+        <ul id="claude-chats"></ul>
+      </section>
+      <div class="sidebar-ornament" aria-hidden="true">
+        <span class="hollow"></span>
+      </div>
+    </aside>
+    <main id="chats" aria-label="Chats">
+      <div id="empty">
+        <div class="portrait-stage">
+          <span class="parasol" aria-hidden="true"></span>
+          <span class="hollow hollow-left" aria-hidden="true"></span>
+          <span class="hollow hollow-right" aria-hidden="true"></span>
+          <div class="cameo"><img src="perona.png" width="112" height="112" alt="Perona from One Piece"></div>
+        </div>
+        <h2>Open a chat</h2>
+        <p>Start a Codex or Claude chat from the sidebar.</p>
+      </div>
+    </main>
+  </div>
+  <template id="project-workspace">
+    <div class="project-workspace">
+      <nav class="project-nav" aria-label="Project views">
+        <button type="button" data-view="chat" aria-pressed="true">Chat</button>
+        <button type="button" data-view="workflow" aria-pressed="false">Workflow</button>
+        <button type="button" data-view="files" aria-pressed="false">Files</button>
+        <button type="button" data-view="changes" aria-pressed="false">Changes</button>
+        <button type="button" data-view="git" aria-pressed="false">Git</button>
+        <button type="button" data-view="preview" aria-pressed="false">Preview</button>
+        <button type="button" data-view="terminal" aria-pressed="false">Terminal</button>
+      </nav>
+      <div class="project-body">
+        <section class="project-view agent-terminal-view" data-panel="chat" aria-label="Agent chat terminal">
+          <div class="view-heading agent-terminal-heading">
+            <h3></h3>
+            <span class="agent-terminal-status" role="status"></span>
+          </div>
+          <div class="terminal-pane agent-terminal"></div>
+        </section>
+        <section class="project-view workflow-view" data-panel="workflow" aria-label="Workflow" hidden>
+          <div class="view-heading"><h3>Workflow</h3><span class="workflow-state" role="status"></span></div>
+          <ol class="activity-list"></ol>
+          <p class="view-state activity-empty">Tool calls, file changes, and progress appear here.</p>
+        </section>
+        <section class="project-view files-view" data-panel="files" aria-label="Project files" hidden>
+          <div class="view-heading file-toolbar">
+            <strong class="file-location">Project root</strong>
+            <button class="new-file" type="button">New file</button>
+            <button class="new-directory" type="button">New folder</button>
+            <button class="file-refresh" type="button">Refresh</button>
+          </div>
+          <div class="file-browser">
+            <div class="file-list" aria-label="Files and folders"></div>
+            <div class="file-preview">
+              <div class="file-tabs" aria-label="Open files" hidden></div>
+              <div class="editor-toolbar" hidden>
+                <div class="preview-heading"></div>
+                <button class="file-reload" type="button">Reload</button>
+                <button class="file-save" type="button" disabled>Save</button>
+              </div>
+              <p class="editor-status" role="status" hidden></p>
+              <pre class="file-content">Select a text or code file to edit it.</pre>
+              <div class="file-editor" hidden></div>
+            </div>
+          </div>
+        </section>
+        <section class="project-view changes-view" data-panel="changes" aria-label="Git changes" hidden>
+          <div class="view-heading"><h3>Git changes</h3><button class="changes-refresh" type="button">Refresh</button></div>
+          <div class="changes-content"></div>
+        </section>
+        <section class="project-view" data-panel="git" aria-label="Git repository" hidden>
+          <div class="view-heading"><h3>Git repository</h3><button class="git-refresh" type="button">Refresh</button></div>
+          <div class="git-content">
+            <p class="git-message" role="status"></p>
+            <fieldset class="git-controls" disabled>
+              <button type="button" data-git-action="init" hidden>Initialize Git</button>
+              <div class="git-repository" hidden>
+                <form class="git-commit git-form">
+                  <input aria-label="Commit message" placeholder="Commit message" maxlength="1000" required>
+                  <button type="submit">Commit staged files</button>
+                </form>
+                <p class="git-branch"></p>
+                <p class="git-origin-label"></p>
+                <div class="git-actions">
+                  <button type="button" data-git-action="fetch">Fetch</button>
+                  <button type="button" data-git-action="pull">Pull</button>
+                  <button type="button" data-git-action="push">Push</button>
+                </div>
+                <section class="git-connect">
+                  <h4>Connect a repository</h4>
+                  <p>Create an empty repository with your provider. Leave its README, license, and .gitignore unchecked, then paste its clone URL here.</p>
+                  <div class="git-actions">
+                    <button type="button" data-git-provider="github">Create on GitHub</button>
+                    <button type="button" data-git-provider="gitlab">Create on GitLab</button>
+                  </div>
+                  <form class="git-origin git-form">
+                    <input aria-label="Repository clone URL" placeholder="HTTPS or SSH clone URL" maxlength="2048" required>
+                    <button type="submit">Connect origin</button>
+                  </form>
+                </section>
+                <details class="git-author">
+                  <summary>Commit author for this repository</summary>
+                  <form class="git-identity git-form">
+                    <input name="author" aria-label="Author name" placeholder="Author name" maxlength="200" required>
+                    <input name="email" type="email" aria-label="Author email" placeholder="Author email" maxlength="320" required>
+                    <button type="submit">Save author</button>
+                  </form>
+                </details>
+                <div class="git-actions">
+                  <h4>File changes</h4>
+                  <button type="button" data-git-action="stage-all">Stage all</button>
+                </div>
+                <ul class="git-files" aria-label="Changed files"></ul>
+              </div>
+            </fieldset>
+          </div>
+        </section>
+        <section class="project-view preview-view" data-panel="preview" aria-label="Local site preview" hidden>
+          <form class="browser-toolbar">
+            <button type="button" class="browser-back" aria-label="Go back" title="Back">←</button>
+            <button type="button" class="browser-refresh" aria-label="Reload page" title="Reload">↻</button>
+            <input class="browser-url" aria-label="Local URL" type="text" placeholder="localhost or local project hostname" required>
+            <button type="submit">Go</button>
+            <button type="button" class="browser-project">Use project URL</button>
+          </form>
+          <p class="browser-message" role="status" hidden></p>
+          <div class="browser-surface"></div>
+        </section>
+        <section class="project-view project-shell terminal-background" data-panel="terminal" aria-label="Project terminal" inert>
+          <div class="view-heading">
+            <h3>fish <span>Git Bash</span></h3>
+            <span class="project-shell-status" role="status"></span>
+            <button class="project-shell-start" type="button" hidden>Start shell</button>
+          </div>
+          <div class="terminal-pane project-shell-body"></div>
+        </section>
+      </div>
+    </div>
+  </template>
+  <dialog id="file-action-dialog" aria-labelledby="file-action-title">
+    <form method="dialog">
+      <h2 id="file-action-title"></h2>
+      <label for="file-action-path">Path relative to project folder</label>
+      <input id="file-action-path" required maxlength="1000" autofocus>
+      <div class="dialog-actions">
+        <button value="cancel" formnovalidate>Cancel</button>
+        <button value="apply">Apply</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="monitor-dialog" class="tool-dialog" aria-labelledby="monitor-title">
+    <h2 id="monitor-title">Agent sessions</h2>
+    <div id="monitor-list"></div>
+    <form method="dialog"><div class="dialog-actions"><button>Close</button></div></form>
+  </dialog>
+  <dialog id="services-dialog" class="tool-dialog" aria-labelledby="services-title">
+    <header class="xampp-heading">
+      <div><h2 id="services-title">XAMPP Control Panel</h2><p id="xampp-root" class="view-state"></p></div>
+      <button id="xampp-close" type="button">Close</button>
+    </header>
+    <nav class="xampp-utilities" aria-label="XAMPP utilities">
+      <button id="xampp-panel-config" type="button">Config</button>
+      <button id="xampp-netstat" type="button">Netstat</button>
+      <button type="button" data-xampp-utility="shell">Shell</button>
+      <button type="button" data-xampp-utility="explorer">Explorer</button>
+      <button type="button" data-xampp-utility="windows-services">Windows Services</button>
+      <button type="button" data-xampp-utility="help">Help</button>
+    </nav>
+    <p id="xampp-message" class="view-state" role="status" hidden></p>
+    <div class="xampp-table-wrap">
+      <table class="xampp-table">
+        <thead><tr><th>Service</th><th>Module</th><th>PID</th><th>Ports</th><th>Actions</th></tr></thead>
+        <tbody id="services-list"></tbody>
+      </table>
+    </div>
+    <section id="xampp-detail" aria-label="XAMPP details" hidden>
+      <div class="xampp-detail-bar">
+        <strong id="xampp-detail-title"></strong>
+        <select id="xampp-config-path" aria-label="Configuration file" hidden></select>
+        <button id="xampp-config-save" type="button" hidden>Save</button>
+        <button id="xampp-detail-close" type="button">Close details</button>
+      </div>
+      <pre id="service-log" class="diff-content" aria-label="Module log" hidden></pre>
+      <textarea id="xampp-config-text" aria-label="Configuration contents" spellcheck="false" hidden></textarea>
+    </section>
+  </dialog>
+  <template id="chat-row">
+    <li class="chat-row">
+      <button class="chat-link" type="button">
+        <span class="chat-label"></span>
+        <span class="chat-folder"></span>
+        <span class="chat-status"></span>
+      </button>
+      <button class="chat-rename" type="button">Rename</button>
+      <button class="chat-close" type="button">×</button>
+    </li>
+  </template>
+  <div id="perona-pet" class="perona-pet">
+    <canvas width="66" height="51" aria-hidden="true"></canvas>
+    <button class="perona-pet-hit" type="button" aria-label="Chibi Perona actions"
+      title="Drag Perona to move her. Right-click for animations."></button>
+  </div>
+  <div id="context-menu" class="context-menu" popover="auto" role="menu" aria-label="Actions"></div>
+  <dialog id="confirm-dialog" aria-labelledby="confirm-title" aria-describedby="confirm-message">
+    <form method="dialog">
+      <h2 id="confirm-title"></h2>
+      <p id="confirm-message"></p>
+      <div class="dialog-actions">
+        <button value="cancel" autofocus>Cancel</button>
+        <button value="save" id="confirm-action"></button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="rename-dialog" aria-labelledby="rename-heading">
+    <form method="dialog">
+      <h2 id="rename-heading">Rename chat</h2>
+      <label for="chat-name">Chat name</label>
+      <input id="chat-name" required maxlength="80" autofocus>
+      <div class="dialog-actions">
+        <button value="cancel" formnovalidate>Cancel</button>
+        <button value="save">Save</button>
+      </div>
+    </form>
+  </dialog>
+</body>
+</html>

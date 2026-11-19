@@ -1,0 +1,32 @@
+{
+  "appId": "Perona.Desktop",
+  "productName": "Perona",
+  "files": [
+    "*.js",
+    "*.cjs",
+    "index.html",
+    "style.css",
+    "perona.png",
+    "perona-eb05.ico",
+    "codex-logo.png",
+    "claude-logo.png",
+    "package.json"
+  ],
+  "asarUnpack": ["node_modules/node-pty/**/*"],
+  "npmRebuild": false,
+  "win": {
+    "icon": "perona-eb05.ico",
+    "target": "nsis"
+  },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": false,
+    "allowToChangeInstallationDirectory": true,
+    "installerIcon": "perona-eb05.ico",
+    "uninstallerIcon": "perona-eb05.ico",
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "deleteAppDataOnUninstall": false,
+    "artifactName": "Perona.Setup.${version}.${arch}.exe"
+  }
+}
