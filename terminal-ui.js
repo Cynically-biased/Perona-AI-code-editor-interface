@@ -88,9 +88,10 @@ function configureProjectShell(session) {
   const panel = session.view.dockPanels.get('terminal');
   const body = panel.querySelector('.project-shell-body');
   const status = panel.querySelector('.project-shell-status');
+  const backend = panel.querySelector('.project-shell-backend');
   const start = panel.querySelector('.project-shell-start');
   const { terminal, fit } = createTerminal();
-  const shell = { terminal, fit, body, start, status, state: 'new' };
+  const shell = { terminal, fit, body, start, status, backend, state: 'new' };
   session.shell = shell;
   terminal.open(body);
   shell.observer = new ResizeObserver(() => fitTerminal(body, fit));
@@ -101,7 +102,28 @@ function configureProjectShell(session) {
   terminal.onResize(({ cols, rows }) => {
     if (shell.state === 'running') window.desk.projectShellResize(session.id, cols, rows).catch(setError);
   });
-  start.addEventListener('click', () => startProjectShell(session, true));
+  start.addEventListener('click', () => {
+    if (shell.state === 'missing') installProjectFish(session);
+    else startProjectShell(session, true);
+  });
+}
+
+async function installProjectFish(session) {
+  const { shell } = session;
+  shell.state = 'installing';
+  shell.start.disabled = true;
+  shell.status.textContent = 'Installing fish with MSYS2…';
+  try {
+    await window.desk.installFish();
+    if (sessions.get(session.id) !== session) return;
+    shell.state = 'new';
+    await startProjectShell(session, true);
+  } catch (error) {
+    shell.state = 'missing';
+    shell.status.textContent = readableError(error);
+  } finally {
+    shell.start.disabled = false;
+  }
 }
 
 function showProjectShell(session, focus = false) {
@@ -124,9 +146,18 @@ async function startProjectShell(session, focus = false) {
   fitTerminal(shell.body, shell.fit);
   const { cols, rows } = shell.terminal;
   try {
-    await window.desk.startProjectShell(session.chat.id, session.id, session.agent, cols, rows);
+    const result = await window.desk.startProjectShell(session.chat.id, session.id, session.agent, cols, rows);
     if (shell.state !== 'starting' || sessions.get(session.id) !== session) return;
+    if (result?.missingFish) {
+      shell.state = 'missing';
+      shell.status.textContent = 'Fish is missing. Install it with MSYS2.';
+      shell.start.textContent = 'Install fish';
+      shell.start.hidden = false;
+      return;
+    }
     shell.state = 'running';
+    shell.backend.textContent = result?.backend ?? '';
+    shell.start.textContent = 'Start shell';
     shell.status.textContent = '';
     if (cols !== shell.terminal.cols || rows !== shell.terminal.rows) {
       await window.desk.projectShellResize(session.id, shell.terminal.cols, shell.terminal.rows);
@@ -134,6 +165,7 @@ async function startProjectShell(session, focus = false) {
     if (shell.focusOnStart && activeChat?.current === session && isViewVisible(session.view, 'terminal')) shell.terminal.focus();
   } catch (error) {
     shell.state = 'ended';
+    shell.start.textContent = 'Start shell';
     shell.status.textContent = readableError(error);
     shell.start.hidden = false;
   }
@@ -144,6 +176,7 @@ window.desk.onProjectShellExit((id, code) => {
   const shell = sessions.get(id)?.shell;
   if (!shell) return;
   shell.state = 'ended';
+  shell.start.textContent = 'Start shell';
   shell.status.textContent = code ? 'Shell exited with code ' + code : 'Shell exited';
   shell.start.hidden = false;
 });

@@ -1,5 +1,15 @@
 # Perona
 
+## Updating Perona
+
+The installed Windows app checks GitHub Releases at startup. Use **Check for
+updates** in the title bar to check again and **Restart to update** after the
+download completes. Install the updater-enabled version once to get this option.
+
+For each release, increment the app version and build the Windows installer.
+Publish the matching `v<version>` tag with the installer, its `.blockmap`, and
+`latest.yml` from the same build.
+
 Run **Perona.Setup.1.0.0.x64.exe** to install Perona on 64-bit Windows,
 then open **Perona** from the Start menu or desktop. The installer bundles
 Electron and the editor. Install your chosen agent CLI and tmux separately.
@@ -33,6 +43,11 @@ The tabs above each project session keep conversation and project information se
   prompts and slash commands, such as `/model`, directly in the CLI. Sign-in
   prompts and approvals appear here as well. Scroll to read earlier output.
   Press Shift+Enter or Ctrl+Enter to insert a newline, and Enter to submit.
+  Perona checks for CLI updates before opening the first chat for each agent.
+  Use **Update agent** in the chat toolbar to check again and reopen the same conversation.
+  The sidebar shows usage reported by each provider. Claude usage depends on
+  the account and arrives after a supported chat reply. Perona uses its own
+  Claude status line inside Perona sessions to read this data.
 - **Workflow** shows recorded commands, tool calls, file changes, and progress.
 - **Files** browses the session's project folder. Open a text or code file to edit
   it in Monaco with line numbers, syntax highlighting, folding, multiple tabs,
@@ -48,8 +63,9 @@ The tabs above each project session keep conversation and project information se
   Apache virtual host, alias, or document-root path can be found. Use **Use
   project URL** to detect it again, or enter a localhost address or
   loopback alias from the Windows hosts file.
-- **Terminal** launches fish through Git Bash in the project folder. Install
-  Git for Windows with fish available in its `usr/bin` directory.
+- **Terminal** opens fish in the project folder. It uses Git Bash when fish
+  is already installed there, or MSYS2. If fish is missing, select **Install fish**
+  to install it through MSYS2 and start the terminal automatically.
 
 Use **Agents** in the title bar to see the state of open conversations and jump
 to a project session. **Services** opens the XAMPP Control Panel for the

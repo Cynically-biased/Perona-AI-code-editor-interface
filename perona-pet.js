@@ -8,6 +8,8 @@ function reportPetActivity(kind, target) {
   const canvas = pet.querySelector('canvas');
   const pixels = canvas.getContext('2d');
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  const stayHereKey = 'perona-stay-here';
+  let stayHere = localStorage.getItem(stayHereKey) === 'true';
   const random = (min, max) => min + Math.random() * (max - min);
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
   const colors = {
@@ -353,6 +355,10 @@ function reportPetActivity(kind, target) {
   }
 
   function nextAction() {
+    if (stayHere) {
+      play('idle');
+      return;
+    }
     const roll = Math.random();
     if (action.kind !== 'idle' && roll < .66) play('idle');
     else play(roll < .18 ? 'summon' : roll < .48 ? 'fly' : 'walk');
@@ -453,11 +459,21 @@ function reportPetActivity(kind, target) {
   function actions(event) {
     notice('petMenu', true);
     showContextMenu(event, [
-      ['Walk', () => choose('walk')],
+      [stayHere ? 'Let her roam' : 'Stay here', toggleStayHere],
+      ...(!stayHere ? [
+        ['Walk', () => choose('walk')],
+        ['Fly with parasol', () => choose('fly')]
+      ] : []),
       ['Idle', () => choose('idle')],
-      ['Fly with parasol', () => choose('fly')],
       ['Summon a ghost', () => choose('summon')]
     ], hit);
+  }
+
+  function toggleStayHere() {
+    stayHere = !stayHere;
+    localStorage.setItem(stayHereKey, String(stayHere));
+    if (stayHere && !action.reaction) play('idle');
+    notice('command', true);
   }
 
   function choose(kind) {
@@ -471,7 +487,9 @@ function reportPetActivity(kind, target) {
   hit.addEventListener('click', event => { if (event.detail === 0) actions(event); });
   hit.addEventListener('pointerdown', event => {
     if (event.button !== 0) return;
+    event.preventDefault();
     hit.setPointerCapture(event.pointerId);
+    pet.dataset.dragging = '';
     const dizzyAt = Math.floor(random(3, 6));
     drag = { id: event.pointerId, startX: event.clientX, startY: event.clientY,
       offsetX: event.clientX - x, offsetY: event.clientY - y, moved: false,
@@ -483,8 +501,6 @@ function reportPetActivity(kind, target) {
     if (!drag.moved) {
       if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 4) return;
       drag.moved = true;
-      pet.dataset.dragging = '';
-      syncPreview();
       react();
     }
     x = event.clientX - drag.offsetX;
@@ -497,7 +513,6 @@ function reportPetActivity(kind, target) {
     const wasMoved = drag.moved;
     drag = undefined;
     delete pet.dataset.dragging;
-    syncPreview();
     if (clicked && (!wasMoved || !action.reaction)) react();
     else if (!action.reaction) play('idle');
   }

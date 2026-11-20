@@ -25,6 +25,7 @@
     <h1><img class="brand-portrait" src="perona.png" width="36" height="36" alt="">Perona</h1>
     <button id="open-monitor" class="app-tool" type="button">Agents</button>
     <button id="open-services" class="app-tool" type="button">Services</button>
+    <button id="app-update" class="app-tool" type="button" hidden>Check for updates</button>
     <div class="window-controls" role="group" aria-label="Window controls">
       <button id="window-minimize" class="window-control" type="button" aria-label="Minimize window" title="Minimize"><span aria-hidden="true"></span></button>
       <button id="window-maximize" class="window-control" type="button" aria-label="Maximize window" title="Maximize"><span aria-hidden="true"></span></button>
@@ -34,6 +35,7 @@
   <p id="error" role="alert" hidden></p>
   <div class="workspace">
     <aside class="sidebar" aria-label="Manage chats">
+      <div class="sidebar-projects">
       <section class="agent" aria-labelledby="codex-heading">
         <header>
           <h2 id="codex-heading"><img src="codex-logo.png" width="22" height="22" alt="">Codex</h2>
@@ -51,6 +53,20 @@
       <div class="sidebar-ornament" aria-hidden="true">
         <span class="hollow"></span>
       </div>
+      </div>
+      <section class="agent-usage" aria-labelledby="usage-heading">
+        <h2 id="usage-heading">Agent usage</h2>
+        <details id="codex-usage-section" class="agent-usage-section" open>
+          <summary>Codex</summary>
+          <div id="codex-usage">Checking…</div>
+          <div id="codex-charts"></div>
+        </details>
+        <details id="claude-usage-section" class="agent-usage-section" open>
+          <summary>Claude</summary>
+          <div id="claude-usage">Waiting for usage data</div>
+          <div id="claude-charts"></div>
+        </details>
+      </section>
     </aside>
     <main id="chats" aria-label="Chats">
       <div id="empty">
@@ -81,6 +97,7 @@
           <div class="view-heading agent-terminal-heading">
             <h3></h3>
             <span class="agent-terminal-status" role="status"></span>
+            <button class="agent-update" type="button" disabled>Update agent</button>
           </div>
           <div class="terminal-pane agent-terminal"></div>
         </section>
@@ -175,7 +192,7 @@
         </section>
         <section class="project-view project-shell terminal-background" data-panel="terminal" aria-label="Project terminal" inert>
           <div class="view-heading">
-            <h3>fish <span>Git Bash</span></h3>
+            <h3>fish <span class="project-shell-backend"></span></h3>
             <span class="project-shell-status" role="status"></span>
             <button class="project-shell-start" type="button" hidden>Start shell</button>
           </div>
@@ -242,6 +259,7 @@
       <button class="chat-close" type="button">×</button>
     </li>
   </template>
+  <webview id="local-preview" src="about:blank" partition="perona-local-preview" hidden></webview>
   <div id="perona-pet" class="perona-pet">
     <canvas width="66" height="51" aria-hidden="true"></canvas>
     <button class="perona-pet-hit" type="button" aria-label="Chibi Perona actions"

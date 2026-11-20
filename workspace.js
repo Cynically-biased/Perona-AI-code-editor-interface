@@ -22,6 +22,8 @@ function configureWorkspace(session) {
   const { root } = view;
   root.querySelector('.agent-terminal-heading h3').textContent = names[session.agent] + ' chat';
   view.terminalStatus = root.querySelector('.agent-terminal-status');
+  view.updateAgent = root.querySelector('.agent-update');
+  view.updateAgent.addEventListener('click', () => updateChatAgent(session));
   if (session.extra) {
     for (const element of root.querySelectorAll('[data-view], [data-panel]')) {
       if (!dockModel.agentTabs.includes(element.dataset.view ?? element.dataset.panel)) element.remove();
@@ -62,8 +64,10 @@ function promptReady(session) {
 function updateWorkspaceState(session) {
   const { view } = session;
   const working = session.running && view.snapshot.working;
-  const status = session.ended ? 'Session ended' : !session.running ? 'Starting…'
-    : working ? 'Working…' : promptReady(session) ? 'Ready' : 'Agent session';
+  const status = session.updateStatus || (session.ended ? 'Session ended' : !session.running ? 'Starting…'
+    : working ? 'Working…' : promptReady(session) ? 'Ready' : 'Agent session');
+  view.updateAgent.disabled = Boolean(session.updateStatus || session.launchFailed ||
+    (!session.ended && (!session.running || working || !promptReady(session))));
   if (view.terminalStatus.textContent !== status) view.terminalStatus.textContent = status;
   view.dockPanels.get('workflow').querySelector('.workflow-state').textContent = working ? 'Working…' : '';
 }

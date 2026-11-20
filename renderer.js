@@ -2,6 +2,39 @@ const chats = new Map();
 const sessions = new Map();
 const counters = { claude: 0, codex: 0 };
 const names = { claude: 'Claude', codex: 'Codex' };
+const updateButton = document.getElementById('app-update');
+let updateState;
+
+function showAppUpdate({ state, version }) {
+  updateState = state;
+  updateButton.hidden = state === 'unavailable';
+  updateButton.disabled = ['checking', 'downloading', 'installing'].includes(state);
+  updateButton.textContent = {
+    checking: 'Checking…', downloading: 'Downloading update…', ready: 'Restart to update',
+    installing: 'Restarting…', current: 'Up to date', error: 'Retry update check'
+  }[state] ?? 'Check for updates';
+  updateButton.title = version ? 'Perona ' + version : 'Check for a Perona update';
+}
+
+window.desk.onAppUpdate(showAppUpdate);
+window.desk.appUpdateStatus().then(showAppUpdate).catch(setError);
+updateButton.addEventListener('click', async () => {
+  try {
+    if (updateState !== 'ready') {
+      await window.desk.checkAppUpdate();
+      return;
+    }
+    if (hasUnsavedServiceConfig() || [...sessions.values()].some(session => hasUnsavedFile(session.view))) {
+      throw new Error('Save your edits before restarting to update Perona.');
+    }
+    if ([...sessions.values()].some(session => session.running || session.shell?.state === 'running') &&
+        !await confirmAction('Restart to update Perona?', 'Restarting will close active agent chats and project terminals.', 'Restart to update')) return;
+    if (hasUnsavedServiceConfig() || [...sessions.values()].some(session => hasUnsavedFile(session.view))) {
+      throw new Error('Save your edits before restarting to update Perona.');
+    }
+    await window.desk.installAppUpdate();
+  } catch (error) { setError(error); }
+});
 const grid = document.querySelector('#chats');
 const empty = document.querySelector('#empty');
 const errorMessage = document.querySelector('#error');
@@ -51,7 +84,7 @@ function updateChat(chat) {
   chat.folderLabel.textContent = chat.cwd.title.split(/[\\/]/).filter(Boolean).at(-1) || chat.cwd.title;
   chat.link.title = [chat.title.textContent, chat.cwd.title].filter(Boolean).join(' · ');
   chat.cwd.disabled = !chat.savedProjects.size || switching || closing;
-  chat.status.textContent = switching ? 'Starting…' : current?.ended ? 'Ended' : current?.running ? '' : 'Saved';
+  chat.status.textContent = current?.updateStatus || (switching ? 'Starting…' : current?.ended ? 'Ended' : current?.running ? '' : 'Saved');
   chat.changeFolder.disabled = switching || closing;
   for (const button of chat.projectChatButtons) {
     button.disabled = !current || switching || closing;
@@ -410,6 +443,7 @@ async function startSession(chat, project, record, usePickedFolder) {
   try {
     const { cols, rows } = terminal;
     await window.desk.start(id, session.agent, cols, rows, usePickedFolder, chat.id, chat.title.textContent);
+    session.updateStatus = '';
     session.running = !session.ended;
     if (session.running && (terminal.cols !== cols || terminal.rows !== rows)) {
       window.desk.resize(id, terminal.cols, terminal.rows).catch(setError);
@@ -418,6 +452,7 @@ async function startSession(chat, project, record, usePickedFolder) {
     view.dockReady = true;
     applyDock(session.dock);
   } catch (error) {
+    session.updateStatus = '';
     session.ended = session.launchFailed = true;
     chat.projects.set(id, session);
     view.dockReady = true;
@@ -433,6 +468,127 @@ window.desk.onData((id, data) => {
   if (!session) return;
   session.terminal.write(data, () => updateWorkspaceState(session));
 });
+window.desk.onAgentUpdate((id, status) => {
+  const session = sessions.get(id);
+  if (!session) return;
+  session.updateStatus = status;
+  updateWorkspaceState(session);
+  if (session.chat.current === session) updateChat(session.chat);
+});
+
+async function updateChatAgent(session) {
+  if (session.view.updateAgent.disabled) return;
+  const { terminal, chat } = session;
+  session.updateStatus = 'Updating agent…';
+  session.running = session.ended = false;
+  updateWorkspaceState(session);
+  if (chat.current === session) updateChat(chat);
+  try {
+    const result = await window.desk.updateAgent(session.id, terminal.cols, terminal.rows, session.providerId);
+    if (!result || sessions.get(session.id) !== session) return;
+    session.running = !session.ended;
+    if (session.running) await window.desk.resize(session.id, terminal.cols, terminal.rows);
+    if (result.updateError) terminal.writeln('\r\n[' + result.updateError + ']');
+    if (chat === activeChat && chat.current === session && isViewVisible(session.view, 'chat')) terminal.focus();
+  } catch (error) {
+    session.ended = true;
+    setError(error);
+  } finally {
+    session.updateStatus = '';
+    if (sessions.get(session.id) === session) {
+      updateWorkspaceState(session);
+      if (chat.current === session) updateChat(chat);
+    }
+  }
+  refreshAgentUsage();
+}
+
+let refreshingAgentUsage = false;
+for (const agent of Object.keys(names)) {
+  const section = document.getElementById(agent + '-usage-section');
+  const key = 'usage-collapsed-' + agent;
+  section.open = localStorage.getItem(key) !== 'true';
+  section.addEventListener('toggle', () => localStorage.setItem(key, String(!section.open)));
+}
+
+const usageDate = new Intl.DateTimeFormat(undefined, { weekday: 'short', hour: 'numeric' });
+const usageAmount = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
+
+function usageChart(title, buckets) {
+  const chart = node('figure', '', 'usage-chart');
+  const svg = (tag, attributes) => {
+    const element = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    for (const [key, value] of Object.entries(attributes)) element.setAttribute(key, value);
+    return element;
+  };
+  const amount = used => usageAmount.format(used) + '%';
+  const points = buckets.flatMap(({ used, start }, index) => Number.isFinite(used)
+    ? [{ used, start, index, x: 3 + index / (buckets.length - 1) * 194 }] : []);
+  const latest = points.at(-1);
+  const plot = svg('svg', { viewBox: '0 0 200 39', preserveAspectRatio: 'none', role: 'img',
+    'aria-label': title + ' of account-wide 7-day limit usage. Dashed lines skip missing hours.' });
+  const values = points.map(point => point.used);
+  const low = values.length ? Math.floor(Math.min(...values) / 10) * 10 : 0;
+  const high = values.length ? Math.max(low + 10, Math.ceil(Math.max(...values) / 10) * 10) : 100;
+  const y = used => 35 - (used - low) / (high - low) * 31;
+  for (const level of [4, 19.5, 35]) {
+    plot.append(svg('line', { x1: 3, x2: 197, y1: level, y2: level, class: 'usage-grid' }));
+  }
+  for (const [index, point] of points.entries()) {
+    const previous = points[index - 1];
+    if (previous) plot.append(svg('line', {
+      x1: previous.x, y1: y(previous.used), x2: point.x, y2: y(point.used),
+      class: point.index - previous.index > 1 ? 'usage-line usage-gap' : 'usage-line'
+    }));
+    const dot = svg('circle', { cx: point.x, cy: y(point.used), r: point === latest ? 2.5 : 1.25 });
+    const tooltip = svg('title', {});
+    tooltip.textContent = usageDate.format(point.start) + ' · ' + amount(point.used) + ' used';
+    dot.append(tooltip);
+    plot.append(dot);
+  }
+  const caption = node('figcaption');
+  caption.append(node('strong', title), node('span', latest ? amount(latest.used) + ' used' : 'Collecting readings'));
+  const axis = node('div', '', 'usage-axis');
+  axis.append(node('span', amount(low) + '–' + amount(high) + ' scale'),
+    node('span', latest ? usageDate.format(latest.start) : ''));
+  chart.append(caption, plot, axis);
+  return chart;
+}
+
+async function refreshAgentUsage() {
+  if (refreshingAgentUsage) return;
+  refreshingAgentUsage = true;
+  try {
+    const { usage, charts } = await window.desk.agentUsage();
+    for (const agent of Object.keys(names)) {
+      document.getElementById(agent + '-charts').replaceChildren(
+        usageChart('Last 24 hours', charts[agent].daily), usageChart('Last 7 days', charts[agent].weekly));
+      const panel = document.getElementById(agent + '-usage');
+      const windows = usage[agent];
+      if (!windows.length) {
+        panel.textContent = agent === 'claude' ? 'Available after a supported chat reply' : 'Usage unavailable';
+        continue;
+      }
+      panel.replaceChildren(...windows.map(({ label, used, reset }) => {
+        const row = node('div', '', 'usage-window');
+        const meter = document.createElement('progress');
+        meter.max = 100;
+        meter.value = Math.min(100, used);
+        meter.setAttribute('aria-label', names[agent] + ' ' + label + ' usage');
+        if (reset) row.title = 'Resets ' + new Date(reset * 1000).toLocaleString();
+        row.append(node('span', label), node('span', Math.round(used) + '% used'), meter);
+        return row;
+      }));
+    }
+  } catch (error) {
+    setError(error);
+  } finally {
+    refreshingAgentUsage = false;
+  }
+}
+refreshAgentUsage();
+setInterval(refreshAgentUsage, 60000);
+
 window.desk.onExit((id, code) => {
   const session = sessions.get(id);
   if (!session) return;

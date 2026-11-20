@@ -109,7 +109,14 @@ async function confirmAction(title, message, action) {
   }
 }
 let visiblePreview;
+const previewGuest = document.getElementById('local-preview');
 let servicesReading = false;
+
+function hidePreview() {
+  previewGuest.hidden = true;
+  if (visiblePreview) window.desk.previewHide().catch(setError);
+  visiblePreview = undefined;
+}
 
 function browserMessage(session, text) {
   const element = session.view.previewPanel.querySelector('.browser-message');
@@ -121,29 +128,30 @@ function syncPreview() {
   const session = activeChat?.projects.get(activeChat.selectedId);
   const anyDialog = document.querySelector('dialog[open]');
   if (!session || !isViewVisible(session.view, 'preview') || anyDialog || liftedDrag
-      || document.querySelector('.perona-pet[data-dragging]') || contextMenu.matches(':popover-open')
+      || contextMenu.matches(':popover-open')
       || session.dock.busy || session.dock.root.querySelector('.dock-controls[open]')) {
-    if (visiblePreview) window.desk.previewHide().catch(setError);
-    visiblePreview = undefined;
+    hidePreview();
     return;
   }
   if (session.view.previewUrl === undefined) {
+    hidePreview();
     if (!session.view.previewDetecting && (session.running || session.ended)) detectPreview(session);
     return;
   }
   if (!session.view.previewUrl) {
-    if (visiblePreview) window.desk.previewHide().catch(setError);
-    visiblePreview = undefined;
+    hidePreview();
     browserMessage(session, 'No site is mapped to this folder. Enter its localhost URL to preview it.');
     return;
   }
   const { x, y, width, height } = session.view.surface.getBoundingClientRect();
-  if (!width || !height) return;
+  if (!width || !height) { hidePreview(); return; }
+  Object.assign(previewGuest.style, { left: x + 'px', top: y + 'px', width: width + 'px', height: height + 'px' });
+  previewGuest.hidden = false;
   visiblePreview = session;
-  window.desk.previewShow(session.id, { x, y, width, height }, session.view.previewUrl)
+  window.desk.previewShow(session.id, session.view.previewUrl)
     .catch(error => {
       if (visiblePreview === session) {
-        window.desk.previewHide().catch(setError);
+        hidePreview();
         browserMessage(session, readableError(error));
       }
     });

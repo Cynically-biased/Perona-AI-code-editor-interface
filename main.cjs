@@ -3,8 +3,12 @@ const { execFile, execFileSync } = require('node:child_process');
 const { existsSync, readdirSync, statSync } = require('node:fs');
 const path = require('node:path');
 const { promisify } = require('node:util');
+const { writeFile } = require('node:fs/promises');
+const { codexUsage, claudeUsage, claudeUsageSettings } = require('./agent-usage.cjs');
+const { createUsageHistory } = require('./usage-history.cjs');
 const pty = require('node-pty');
 const { createPreview } = require('./preview.cjs');
+const { createAppUpdates } = require('./app-updates.cjs');
 const { localHosts, suggestPreview } = require('./project-preview.cjs');
 const xampp = require('./xampp.cjs');
 const { registerInterface } = require('./app-protocol.cjs');
@@ -13,12 +17,19 @@ const { openWorkspace } = require('./saved-workspace.cjs');
 const { gitStatus, gitAction } = require('./project-git.cjs');
 const { listFolder, previewFile, saveFile, createEntry, moveEntry, removeEntry, projectChanges } = require('./project-files.cjs');
 
+app.setName('Perona');
 const run = promisify(execFile);
 const chats = new Map();
 const chatControls = new Map();
 const projectShells = new Map();
 const projects = new Map();
 const starting = new Map();
+const chatCleanup = new Map();
+const agentUpdates = new Map();
+const lastUpdateCheck = new Map();
+const claudeUsageFile = path.join(app.getPath('userData'), 'claude-usage.json');
+const usageHistory = createUsageHistory(path.join(app.getPath('userData'), 'usage-history.json'));
+const claudeSettingsFile = path.join(app.getPath('userData'), 'claude-statusline.json');
 const fileOperations = new Set();
 const defaultFolder = app.isPackaged ? app.getPath('documents') : path.dirname(__dirname);
 let pickerOpen = false;
@@ -29,6 +40,8 @@ let discardWindowEdits = false;
 let workspace;
 let preview;
 let previewRequest = 0;
+const appUpdates = createAppUpdates(app.isPackaged && process.platform === 'win32',
+  status => send('app-update-status', status));
 
 function findExecutable(name) {
   const options = { windowsHide: true, encoding: 'utf8' };
@@ -84,6 +97,48 @@ register('workspace-save-project-dock', (...args) => workspace.saveProjectDock(.
 register('workspace-select', (...args) => workspace.select(...args));
 register('workspace-rename', (chat, name) => workspace.rename(chat, name));
 register('workspace-remove', chat => workspace.remove(chat));
+register('app-update-status', () => appUpdates.status());
+register('app-update-check', () => appUpdates.check());
+register('app-update-install', () => {
+  if (starting.size || fileOperations.size || fishInstallation || agentUpdates.size) {
+    throw new Error('Wait for the current operation to finish, then restart to update.');
+  }
+  appUpdates.install();
+});
+
+register('agent-usage', async () => {
+  const results = await Promise.allSettled([
+    Promise.resolve().then(() => agentUpdates.has('codex') ? [] : codexUsage(findExecutable('codex'))),
+    claudeUsage(claudeUsageFile)
+  ]);
+  const usage = Object.fromEntries(['codex', 'claude'].map((agent, index) =>
+    [agent, results[index].status === 'fulfilled' ? results[index].value : []]));
+  return { usage, charts: await usageHistory(usage) };
+});
+
+function updateAgent(agent) {
+  if (agentUpdates.has(agent)) return agentUpdates.get(agent);
+  const update = (async () => {
+    const command = findExecutable(agent);
+    const options = { windowsHide: true, timeout: 180000, cwd: app.getPath('userData') };
+    if (agent === 'claude' && /[\\/]WinGet[\\/](?:Packages|Links)[\\/]/i.test(command)) {
+      const { stdout } = await run('winget.exe', ['upgrade', '--id', 'Anthropic.ClaudeCode', '--exact',
+        '--silent', '--disable-interactivity', '--accept-package-agreements', '--accept-source-agreements'], options)
+        .catch(error => {
+          if ((error.code >>> 0) === 0x8a15002b) return { stdout: '' }; // No applicable update.
+          throw error;
+        });
+      return stdout;
+    }
+    const { stdout } = await run(command, ['update'], options);
+    return stdout;
+  })().finally(() => {
+    lastUpdateCheck.set(agent, Date.now());
+    agentUpdates.delete(agent);
+  });
+  agentUpdates.set(agent, update);
+  return update;
+}
 
 register('pick-chat-folder', async (id, agent, currentFolder) => {
   if (typeof id !== 'string' || !/^[a-f0-9-]{36}$/.test(id)
@@ -127,7 +182,18 @@ register('start-chat', async (id, agent, cols, rows, usePickedFolder, chatId, na
     folderSelection = undefined;
   }
   if (!saved) workspace.add(chatId, agent, name, id, cwd);
-  const launch = startChat(id, agent, cwd, cols, rows, chatId, saved?.thread);
+  const launch = (async () => {
+    if (agentUpdates.has(agent) || (
+      Date.now() - (lastUpdateCheck.get(agent) ?? 0) > 6 * 60 * 60 * 1000 &&
+      ![...chats.keys()].some(key => projects.get(key)?.agent === agent)
+    )) {
+      send('chat-update-state', id, 'Checking for updates…');
+      await updateAgent(agent).catch(() => {
+        send('chat-data', id, '\r\n[Automatic update unavailable. Use Update agent to retry.]\r\n');
+      });
+    }
+    await startChat(id, agent, cwd, cols, rows, chatId, saved?.thread);
+  })();
   starting.set(id, launch);
   try {
     await launch;
@@ -137,16 +203,21 @@ register('start-chat', async (id, agent, cols, rows, usePickedFolder, chatId, na
 });
 
 async function startChat(id, agent, cwd, cols, rows, chatId, knownThread) {
+  await chatCleanup.get(id);
   if (!statSync(cwd, { throwIfNoEntry: false })?.isDirectory()) {
     throw new Error('Choose an existing working folder.');
   }
-  projects.set(id, { cwd });
   tmux ??= findExecutable('tmux');
   const command = findExecutable(agent);
   const thread = resumeThread(id, agent, cwd, knownThread);
   const args = agent === 'claude'
     ? (thread ? ['--resume', thread] : ['--session-id', id])
-    : ['--no-alt-screen', '-c', "tui.status_line=['model-with-reasoning','current-dir','session-id']"];
+    : ['--no-alt-screen', '-c', 'check_for_update_on_startup=false',
+      '-c', "tui.status_line=['model-with-reasoning','current-dir','session-id']"];
+  if (agent === 'claude') {
+    await writeFile(claudeSettingsFile, claudeUsageSettings(claudeUsageFile));
+    args.push('--settings', claudeSettingsFile);
+  }
   if (agent === 'codex' && thread) args.push('resume', thread);
   const script = [
     "$ErrorActionPreference = 'Stop'",
@@ -184,12 +255,14 @@ async function startChat(id, agent, cwd, cols, rows, chatId, knownThread) {
     throw error;
   }
   chats.set(id, terminal);
-  projects.set(id, { cwd, history });
+  projects.set(id, { cwd, history, agent, chatId });
   terminal.onData(data => send('chat-data', id, data));
   terminal.onExit(({ exitCode }) => {
     if (chats.get(id) !== terminal) return;
     chats.delete(id);
-    run(tmux, tmuxArgs(id, 'kill-server'), { windowsHide: true, timeout: 3000 }).catch(() => {});
+    const cleanup = run(tmux, tmuxArgs(id, 'kill-server'), { windowsHide: true, timeout: 3000 })
+      .catch(() => {}).finally(() => chatCleanup.delete(id));
+    chatCleanup.set(id, cleanup);
     send('chat-exit', id, exitCode);
   });
 }
@@ -210,6 +283,38 @@ register('chat-input', (id, data) => {
   if (typeof data !== 'string') return;
   if (chatControls.has(id)) return queueChatControl(id, terminal => terminal.write(data));
   chats.get(id)?.write(data);
+});
+
+register('update-chat-agent', (id, cols, rows, candidate) => {
+  const project = projects.get(id);
+  if (!project || !size(cols, rows) || starting.has(id)) throw new Error('Chat is unavailable.');
+  const { agent, chatId, cwd, history } = project;
+  const saved = workspace.project(chatId, id, agent);
+  if (!saved) throw new Error('Chat is unavailable.');
+  const thread = history(candidate, true).thread ?? saved.thread;
+  const restart = (async () => {
+    send('chat-update-state', id, 'Updating agent…');
+    const terminal = chats.get(id);
+    if (terminal) {
+      // Ignore the old pane's exit callback while replacing it.
+      chats.delete(id);
+      try {
+        await run(tmux, tmuxArgs(id, 'kill-server'), { windowsHide: true, timeout: 5000 });
+      } catch (error) {
+        if (!/no server running|can't find session|no sessions|error connecting/i.test(error.stderr || '')) {
+          chats.set(id, terminal);
+          return { updateError: 'Perona could not stop this agent safely. Try Update agent again.' };
+        }
+      }
+    }
+    let updateError;
+    try { await updateAgent(agent); } catch { updateError = 'The agent update failed. Use Update agent to retry.'; }
+    if (projects.get(id) !== project) return null;
+    await startChat(id, agent, cwd, cols, rows, chatId, thread);
+    return { updateError };
+  })();
+  starting.set(id, restart);
+  return restart.finally(() => starting.delete(id));
 });
 register('chat-scroll', (id, lines) => {
   if (!chats.has(id) || !Number.isInteger(lines) || !lines) return;
@@ -232,6 +337,10 @@ register('chat-resize', (id, cols, rows) => {
   if (size(cols, rows)) chats.get(id)?.resize(cols, rows);
 });
 register('close-chat', async id => {
+  if (starting.has(id)) {
+    projects.delete(id);
+    await starting.get(id).catch(() => {});
+  }
   if (!chats.has(id)) {
     projects.delete(id);
     closeProjectShell(id);
@@ -253,7 +362,7 @@ function closeProjectShell(id) {
   terminal.kill();
 }
 
-function findGitFish() {
+function findProjectFish() {
   const roots = [
     process.env.ProgramFiles && path.join(process.env.ProgramFiles, 'Git'),
     process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'Programs', 'Git'),
@@ -266,17 +375,66 @@ function findGitFish() {
   } catch {
     // A standard Git for Windows installation may be available outside PATH.
   }
-  let foundBash = false;
   for (const root of roots.filter(Boolean)) {
     const bash = path.join(root, 'bin', 'bash.exe');
-    if (!existsSync(bash)) continue;
-    foundBash = true;
-    if (existsSync(path.join(root, 'usr', 'bin', 'fish.exe'))) return bash;
+    if (existsSync(bash) && existsSync(path.join(root, 'usr', 'bin', 'fish.exe'))) {
+      return { bash, msystem: 'MINGW64' };
+    }
   }
-  throw new Error(foundBash
-    ? 'Install fish in your Git for Windows installation to start this terminal.'
-    : 'Install Git for Windows with Git Bash and fish to start this terminal.');
+  const msys = findMsys2();
+  if (msys && existsSync(path.join(path.dirname(msys), 'fish.exe'))) {
+    return { bash: msys, msystem: 'MSYS' };
+  }
 }
+
+function findMsys2() {
+  const drive = process.env.SystemDrive || 'C:';
+  const roots = [path.join(drive + '\\', 'msys64'), path.join(drive + '\\', 'tools', 'msys64')];
+  for (const root of roots) {
+    const bin = path.join(root, 'usr', 'bin');
+    const bash = path.join(bin, 'bash.exe');
+    if (existsSync(bash) && existsSync(path.join(bin, 'pacman.exe'))) return bash;
+  }
+}
+
+let fishInstallation;
+register('project-shell-install-fish', () => {
+  if (fishInstallation) return fishInstallation;
+  if (findProjectFish()) return;
+  fishInstallation = (async () => {
+    const cwd = app.getPath('userData');
+    const options = { cwd, windowsHide: true, timeout: 10 * 60 * 1000 };
+    let bash = findMsys2();
+    const fresh = !bash;
+    if (!bash) {
+      try {
+        await run('winget.exe', ['install', '--id', 'MSYS2.MSYS2', '--exact', '--source', 'winget',
+          '--silent', '--disable-interactivity', '--accept-package-agreements', '--accept-source-agreements'], options);
+      } catch (error) {
+        throw new Error(error.code === 'ENOENT'
+          ? 'Windows Package Manager is required. Install App Installer from Microsoft Store and try again.'
+          : 'MSYS2 installation failed. Check Windows Package Manager and try again.');
+      }
+      bash = findMsys2();
+    }
+    if (!bash) throw new Error('Perona could not find the MSYS2 installation.');
+    try {
+      const pacman = args => run(bash, ['--login', '-c', 'exec /usr/bin/pacman "$@"', 'perona', ...args], {
+        ...options, env: { ...process.env, MSYSTEM: 'MSYS', CHERE_INVOKING: '1' }
+      });
+      if (fresh) {
+        // Core upgrades may end the first MSYS2 process. Finish in a fresh shell.
+        await pacman(['-Syu', '--noconfirm']);
+        await pacman(['-Syu', '--noconfirm']);
+      }
+      await pacman(['-S', '--needed', '--noconfirm', 'fish']);
+    } catch {
+      throw new Error('Fish installation failed. Check your connection and whether MSYS2 needs an update, then try again.');
+    }
+    if (!findProjectFish()) throw new Error('The fish installer finished, but Perona could not find fish.');
+  })().finally(() => { fishInstallation = undefined; });
+  return fishInstallation;
+});
 
 register('project-shell-start', (chatId, id, agent, cols, rows) => {
   const project = workspace.project(chatId, id, agent);
@@ -285,11 +443,14 @@ register('project-shell-start', (chatId, id, agent, cols, rows) => {
   if (!statSync(project.folder, { throwIfNoEntry: false })?.isDirectory()) {
     throw new Error('The project folder is unavailable.');
   }
-  const bash = findGitFish();
+  const shell = findProjectFish();
+  if (!shell) return { missingFish: true };
+  const { bash, msystem } = shell;
   const terminal = pty.spawn(bash, ['--login', '-c', 'cd -- "$1" && exec /usr/bin/fish --login --interactive',
     'perona', project.folder.replaceAll('\\', '/')], {
     name: 'xterm-256color', cols, rows, cwd: project.folder,
-    env: { ...process.env, MSYSTEM: 'MINGW64', CHERE_INVOKING: '1', SHELL: '/usr/bin/fish' }
+    env: { ...process.env, MSYSTEM: msystem, CHERE_INVOKING: '1', SHELL: '/usr/bin/fish',
+      ...(msystem === 'MSYS' ? { MSYS2_PATH_TYPE: 'inherit' } : {}) }
   });
   projectShells.set(id, terminal);
   terminal.onData(data => send('project-shell-data', id, data));
@@ -298,6 +459,7 @@ register('project-shell-start', (chatId, id, agent, cols, rows) => {
     projectShells.delete(id);
     send('project-shell-exit', id, exitCode);
   });
+  return { backend: msystem === 'MSYS' ? 'MSYS2' : 'Git Bash' };
 });
 
 register('project-shell-input', (id, data) => {
@@ -344,17 +506,15 @@ register('git-create-page', provider => {
 });
 
 register('preview-suggest', id => suggestPreview(projectFor(id).cwd));
-register('preview-show', async (id, bounds, url) => {
+register('preview-show', async (id, url) => {
   projectFor(id);
   const request = ++previewRequest;
   const hosts = await localHosts();
   if (request !== previewRequest || window.isDestroyed()) return;
-  preview ??= createPreview(window, (owner, update) => send('preview-update', owner, update));
-  preview.show(id, bounds, url, hosts);
+  preview.show(id, url, hosts);
 });
 register('preview-hide', () => {
   previewRequest++;
-  preview?.hide();
 });
 register('preview-reload', id => preview?.reload(id));
 register('preview-back', id => preview?.back(id));
@@ -393,7 +553,6 @@ register('window-control', action => {
   }
 });
 
-app.setName('Perona');
 app.setAppUserModelId('Perona.Desktop');
 if (!app.requestSingleInstanceLock()) app.quit();
 else app.whenReady().then(() => {
@@ -404,9 +563,10 @@ else app.whenReady().then(() => {
     width: 1280, height: 800, minWidth: 720, minHeight: 460,
     titleBarStyle: 'hidden',
     backgroundColor: '#21141d', autoHideMenuBar: true,
-    webPreferences: { preload: path.join(__dirname, 'preload.cjs'), sandbox: true }
+    webPreferences: { preload: path.join(__dirname, 'preload.cjs'), sandbox: true, webviewTag: true }
   });
-  window.on('closed', () => { preview?.dispose(); preview = undefined; });
+  preview = createPreview(window, (owner, update) => send('preview-update', owner, update));
+  window.webContents.once('did-finish-load', () => appUpdates.check());
   window.on('maximize', () => send('window-maximized', true));
   window.on('unmaximize', () => send('window-maximized', false));
   window.on('move', () => send('window-moved'));

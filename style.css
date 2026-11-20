@@ -80,9 +80,23 @@ button:disabled { opacity: .5; cursor: default; }
 
 .workspace { display: flex; flex: 1; min-height: 0; }
 .sidebar {
-  flex: 0 0 clamp(220px, 22vw, 286px); min-height: 0; overflow: auto; padding: 22px 14px;
+  flex: 0 0 clamp(220px, 22vw, 286px); min-height: 0; display: flex; flex-direction: column;
   background: linear-gradient(170deg, #3c2233, var(--sidebar) 44%); border-right: 1px solid var(--line);
 }
+.sidebar-projects { flex: 1; min-height: 0; overflow: auto; padding: 22px 14px; }
+.agent-usage { flex: none; display: grid; gap: 8px; max-height: 65%; overflow: auto; border-top: 1px solid var(--line); padding: 10px 14px; font-size: 12px; }
+.agent-usage h2 { margin: 0; font-size: 13px; }
+.agent-usage-section > summary { cursor: pointer; font-weight: 700; }
+.agent-usage-section > div { color: var(--muted); }
+.usage-window { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center; }
+.usage-window progress { grid-column: 1 / -1; width: 100%; height: 6px; accent-color: #f69cc2; }
+.usage-chart { margin: 7px 0 4px; }
+.usage-chart figcaption, .usage-axis { display: flex; justify-content: space-between; gap: 5px; font-size: 11px; }
+.usage-chart svg { display: block; width: 100%; height: 39px; color: #f69cc2; }
+.usage-chart .usage-grid { stroke: var(--line); }
+.usage-chart .usage-line { fill: none; stroke: currentColor; stroke-width: 1.5; }
+.usage-chart .usage-gap { stroke-dasharray: 3 3; opacity: .55; }
+.usage-chart circle { fill: currentColor; }
 .agent + .agent {
   margin-top: 17px; padding-top: 18px;
   background: radial-gradient(circle at 5px -4px, transparent 6px, #a760864d 7px, transparent 8px)
@@ -347,6 +361,9 @@ dialog input {
   background: var(--terminal); border: 1px solid var(--line); color: var(--text); font: inherit;
 }
 .browser-surface { flex: 1; min-height: 0; background: #fff; }
+#local-preview { position: fixed; z-index: 4; user-select: none; }
+#local-preview[hidden] { display: none; }
+body:has(.perona-pet[data-dragging]) #local-preview { pointer-events: none; }
 .browser-message { color: var(--muted); margin: 0; padding: 8px 12px; }
 .tool-dialog { width: min(650px, 88vw); }
 #monitor-list, #services-list { max-height: 42vh; overflow: auto; }
