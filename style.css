@@ -363,7 +363,7 @@ dialog input {
 .browser-surface { flex: 1; min-height: 0; background: #fff; }
 #local-preview { position: fixed; z-index: 4; user-select: none; }
 #local-preview[hidden] { display: none; }
-body:has(.perona-pet[data-dragging]) #local-preview { pointer-events: none; }
+body:has(.perona-pet[data-dragging], #context-menu:popover-open) #local-preview { pointer-events: none; }
 .browser-message { color: var(--muted); margin: 0; padding: 8px 12px; }
 .tool-dialog { width: min(650px, 88vw); }
 #monitor-list, #services-list { max-height: 42vh; overflow: auto; }

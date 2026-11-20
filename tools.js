@@ -71,7 +71,6 @@ function showContextMenu(event, actions, trigger = event.currentTarget) {
   contextMenu.style.left = Math.max(4, Math.min(x, innerWidth - contextMenu.offsetWidth - 4)) + 'px';
   contextMenu.style.top = Math.max(4, Math.min(y, innerHeight - contextMenu.offsetHeight - 4)) + 'px';
   buttons[0]?.focus();
-  syncPreview();
 }
 
 contextMenu.addEventListener('keydown', event => {
@@ -89,7 +88,6 @@ contextMenu.addEventListener('keydown', event => {
     menuTrigger?.focus();
   }
 });
-contextMenu.addEventListener('toggle', syncPreview);
 
 async function confirmAction(title, message, action) {
   if (confirmationPending) return false;
@@ -128,7 +126,6 @@ function syncPreview() {
   const session = activeChat?.projects.get(activeChat.selectedId);
   const anyDialog = document.querySelector('dialog[open]');
   if (!session || !isViewVisible(session.view, 'preview') || anyDialog || liftedDrag
-      || contextMenu.matches(':popover-open')
       || session.dock.busy || session.dock.root.querySelector('.dock-controls[open]')) {
     hidePreview();
     return;
