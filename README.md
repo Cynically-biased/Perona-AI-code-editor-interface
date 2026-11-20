@@ -1,103 +1,81 @@
 # Perona
 
-## Updating Perona
+Perona is a Windows desktop workspace for **Codex CLI** and **Claude Code**. Run multiple agent chats in the same project, edit files, review changes, and preview your local site from one window.
 
-The installed Windows app checks GitHub Releases at startup. Use **Check for
-updates** in the title bar to check again and **Restart to update** after the
-download completes. Install the updater-enabled version once to get this option.
+[Download the latest Windows release](https://github.com/Cynically-biased/Perona-AI-code-editor-interface/releases/latest)
 
-For each release, increment the app version and build the Windows installer.
-Publish the matching `v<version>` tag with the installer, its `.blockmap`, and
-`latest.yml` from the same build.
+## Install and open your first project
 
-Run **Perona.Setup.1.0.0.x64.exe** to install Perona on 64-bit Windows,
-then open **Perona** from the Start menu or desktop. The installer bundles
-Electron and the editor. Install your chosen agent CLI and tmux separately.
-XAMPP is only needed for the Services panel and XAMPP-hosted projects.
+1. Download and run the Windows x64 installer named `Perona.Setup.<version>.x64.exe`.
+2. Install [Codex CLI](https://developers.openai.com/codex/cli/) or [Claude Code](https://code.claude.com/docs/en/setup) and make sure the Windows executable is on your PATH. Sign in through the agent CLI with your own account.
+3. Install the native Windows build of [tmux](https://tmux.app/).
 
-For development, run `npm ci` and `npm start`. Run `npm run build:win` to
-create the installer in `dist/`. The build also creates
-`dist/win-unpacked/Perona.exe`, which runs with the resources in that folder.
-Git excludes downloaded dependencies, build output, and local Windows shortcuts.
+   ```powershell
+   winget install --id arndawg.tmux-windows --exact
+   ```
 
-Use **+ New** under **Codex** or **Claude**. The Windows build starts new chats in Documents.
-Use **Change folder** above the terminal to switch the chat to another project.
-Each folder gets its own agent conversation. Returning to a previously used
-folder shows its original session, and tasks there keep running while hidden.
-Use **+ Codex** or **+ Claude** inside a project to open another agent chat
-beside the main chat. Side chats have Chat, Workflow, and Terminal and share
-the project's working folder. Close a side chat with its own **×**.
+4. Open Perona and click **+ New** under Codex or Claude. New projects start in Documents. Use **Change folder** to select your project directory.
 
-Drag a tab to the left, right, top, or bottom edge of any pane to split it
-again. Drop it on another pane's tab bar to move or reorder it. Drag a tab
-bar, or Shift-drag one of its tabs, to move the whole bar. Drag a chat title
-to move all tabs belonging to that chat. Docking spans the whole project.
-The **⋯**
-menu offers splits in all four directions, moving the active tab, and
-merging with an adjacent pane. Drag any divider, or focus it and use the
-arrow keys to resize that split. Perona remembers the arrangement per project.
+You only need the CLI for the agent you plan to use. Git for Windows is required for the Git tools. XAMPP is optional.
 
-The tabs above each project session keep conversation and project information separate.
+## Work in a project
 
-- **Chat** is the agent's interactive terminal styled for Perona. Enter
-  prompts and slash commands, such as `/model`, directly in the CLI. Sign-in
-  prompts and approvals appear here as well. Scroll to read earlier output.
-  Press Shift+Enter or Ctrl+Enter to insert a newline, and Enter to submit.
-  Perona checks for CLI updates before opening the first chat for each agent.
-  Use **Update agent** in the chat toolbar to check again and reopen the same conversation.
-  The sidebar shows usage reported by each provider. Claude usage depends on
-  the account and arrives after a supported chat reply. Perona uses its own
-  Claude status line inside Perona sessions to read this data.
-- **Workflow** shows recorded commands, tool calls, file changes, and progress.
-- **Files** browses the session's project folder. Open a text or code file to edit
-  it in Monaco with line numbers, syntax highlighting, folding, multiple tabs,
-  undo, and search and replace. Use **Save** or Ctrl+S. Use **New file** and
-  **New folder** for creation, or the item’s **…** button to rename or move it. Perona keeps your draft if the file changed on
-  disk. Copy your edits before using **Reload** to get the latest version.
-  Supported UTF-8 and BOM-marked UTF-16 files up to 2 MB are editable.
-- **Changes** shows local Git status and diffs. Use **Refresh** after edits.
-- **Git** initializes a repository, stages and commits changes, connects a
-  remote, and offers fetch, pull, and push. Create a GitHub or GitLab repository
-  in the provider's browser page, then paste its clone URL into Perona.
-- **Preview** opens the local site for the selected project when its XAMPP
-  Apache virtual host, alias, or document-root path can be found. Use **Use
-  project URL** to detect it again, or enter a localhost address or
-  loopback alias from the Windows hosts file.
-- **Terminal** opens fish in the project folder. It uses Git Bash when fish
-  is already installed there, or MSYS2. If fish is missing, select **Install fish**
-  to install it through MSYS2 and start the terminal automatically.
+Use **+ Codex** or **+ Claude** to open another agent chat in the same project folder. Each chat has its own **Chat**, **Workflow**, and **Terminal** tabs. Switching projects or tabs keeps background sessions running while Perona is open. Since agents in the same project share files, coordinate edits if two chats are working in the same area.
 
-Use **Agents** in the title bar to see the state of open conversations and jump
-to a project session. **Services** opens the XAMPP Control Panel for the
-installation at C:\xampp. Apache, MariaDB/MySQL, FileZilla, Mercury, and Tomcat
-show status, PIDs, ports, and their Admin, Config, and Logs actions. The panel
-also includes Netstat and shortcuts to the XAMPP shell, installation folder,
-Windows Services, and XAMPP help.
+Drag tabs or a tab bar to another pane or to one of its edges to split the workspace. Drag a divider to resize a split. Perona saves the layout, project folders, and chat list locally. It can reopen conversations saved by the CLI. Quitting Perona ends live jobs.
 
-Service registration and control use your Windows permissions. Tomcat needs
-Java. For a standalone MariaDB shutdown, the panel uses XAMPP's configured
-client account or the default local root account. Mercury is stopped through its
-own window so it can shut down gracefully.
+| Tab | What you can do |
+| --- | --- |
+| **Chat** | Use the agent's native CLI for prompts, approvals, sign-in, and commands such as `/model`. Perona checks for CLI updates when opening the first chat for each agent. **Update agent** runs the CLI updater and reopens the conversation. |
+| **Workflow** | See recorded commands, tool calls, file changes, and progress. |
+| **Files** | Browse folders, edit code in Monaco, and create, rename, move, or delete entries. Drag files between folders. The editor supports UTF-8 and BOM-marked UTF-16 text files up to 2 MB. |
+| **Changes** | Review local Git status and diffs. |
+| **Git** | Initialize Git, stage and commit changes, add a remote, fetch, pull, and push. To publish a new project, create the repository on GitHub or GitLab and paste its clone URL into Perona. |
+| **Preview** | Open a localhost page or a local hosts-file alias. **Use project URL** detects supported XAMPP project URLs. |
+| **Terminal** | Run shell commands in the project folder. Perona uses fish through Git Bash when available, or through MSYS2. Select **Install fish** if fish is missing. |
 
-Use **Rename** to label a chat or **×** to close all its project sessions. The CLI
-provides sign-in and model selection. Ctrl+Shift+C copies selected terminal text
-and Ctrl+Shift+V pastes.
+### Chat shortcuts
 
-Perona saves its chat list, names, project folders, and selected views locally.
-The last selected project resumes when Perona opens. Select another saved
-chat or choose a folder from the project dropdown to resume it. Perona
-reopens the original Codex or Claude conversation when the CLI has saved it.
-Empty chats are kept too. Closing a chat with **×** removes it from Perona's
-list. Quitting the app ends live jobs.
+| Shortcut | Action |
+| --- | --- |
+| **Enter** | Send the prompt. |
+| **Shift+Enter** or **Ctrl+Enter** | Insert a line break. |
+| **Ctrl+C** | Copy selected text. |
+| **Ctrl+V** | Paste text. |
+| **Mouse wheel** | Scroll through terminal output. |
 
-## Requirements
+Use **Ctrl+S** to save an open file in the editor.
 
-- 64-bit Windows. Node.js and npm are only needed to build from source.
-- Claude Code and Codex CLI available as Windows executables on PATH.
-- The native Windows tmux port. Install it with
-  `winget install --id arndawg.tmux-windows --exact`.
+### Sidebar and extras
+
+- **Agent usage** shows provider-reported account limits and charts for the last 24 hours and seven days. Click either agent's name to collapse its section. The charts collect readings while Perona is open. Claude refreshes usage after a supported reply in Perona.
+- **Agents** in the title bar lists open conversations and lets you jump to a session.
+- **Services** manages Apache, MariaDB/MySQL, FileZilla, Mercury, and Tomcat for XAMPP installed at `C:\xampp`. Service controls use your Windows permissions. Tomcat requires Java.
+- **Chibi Perona** reacts to activity and can be dragged around the interface, including over the Preview. Right-click her and choose **Stay here** to pause roaming while keeping her idle animations and reactions.
+
+## Update Perona
+
+The installed app checks GitHub Releases at startup. You can also select **Check for updates** in the title bar. When the download is ready, choose **Restart to update**. If you’re on a build without the updater, install the latest release once to enable it.
+
+## Develop locally
+
+On Windows, install Node.js and npm, then run these commands from the repository folder.
+
+```powershell
+npm ci
+npm start
+```
+
+Build the Windows installer locally without publishing it.
+
+```powershell
+npm run build:win -- --publish never
+```
+
+Build output goes to `dist/`. The unpacked app is at `dist/win-unpacked/Perona.exe` and needs the files alongside it. The repository excludes generated builds, local shortcuts, and installed dependencies.
+
+For a release, bump the version, build once, and publish the matching `v<version>` tag. Attach the installer, its `.blockmap` file, and `latest.yml` from that same build so installed copies can update.
 
 ## Artwork
 
-The app portrait is cropped from the official ONE PIECE CARD GAME
-[Perona EB05-043 parallel card](https://www.onepiece-cardgame.com/images/cardlist/card/EB05-043_p1.png).
+The app portrait is cropped from the official ONE PIECE CARD GAME [Perona EB05-043 parallel card](https://www.onepiece-cardgame.com/images/cardlist/card/EB05-043_p1.png).
