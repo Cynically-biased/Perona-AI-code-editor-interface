@@ -38,7 +38,7 @@ function terminalClipboard(event, terminal) {
 
 function configureChatInput(session) {
   const { body, terminal } = session;
-  const jump = session.view.root.querySelector('.jump-to-present');
+  const jump = body.closest('[data-panel="chat"]').querySelector('.jump-to-present');
   const history = document.createElement('pre');
   history.className = 'chat-scrollback';
   history.setAttribute('aria-label', 'Earlier terminal output');
