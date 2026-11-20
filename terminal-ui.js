@@ -1,6 +1,6 @@
-function createTerminal() {
+function createTerminal({ cursorBlink = true } = {}) {
   const terminal = new Terminal({
-    cursorBlink: true, fontFamily: 'Cascadia Mono, Consolas, monospace',
+    cursorBlink, fontFamily: 'Cascadia Mono, Consolas, monospace',
     fontSize: 13, scrollback: 5000,
     theme: {
       background: '#1b121a', foreground: '#fff0e7', cursor: '#ff91c1',
@@ -37,39 +37,88 @@ function terminalClipboard(event, terminal) {
 }
 
 function configureChatInput(session) {
-  let pendingLines = 0;
-  let scrolling = false;
-  async function scroll() {
-    scrolling = true;
+  const { body, terminal } = session;
+  const jump = session.view.root.querySelector('.jump-to-present');
+  const history = document.createElement('pre');
+  history.className = 'chat-scrollback';
+  history.setAttribute('aria-label', 'Earlier terminal output');
+  history.tabIndex = 0;
+  history.hidden = true;
+  body.append(history);
+  let request = 0;
+  let pendingScroll = 0;
+  let redraw;
+
+  function promptRow() {
+    const buffer = terminal.buffer.active;
+    // Look near the live footer so old prompts in the transcript do not anchor it.
+    for (let row = terminal.rows - 1; row >= Math.max(0, terminal.rows - 16); row--) {
+      const line = buffer.getLine(buffer.baseY + row)?.translateToString(true) ?? '';
+      if (/^\s*[›❯](?:\s|$)/.test(line)) return Math.max(0, row - 1);
+    }
+    return Math.max(0, terminal.rows - 6);
+  }
+
+  function layoutHistory() {
+    const screen = body.querySelector('.xterm-screen');
+    const height = screen?.getBoundingClientRect().height ?? 0;
+    history.style.height = Math.max(0, Math.min(terminal.rows - 2, promptRow())) * height / terminal.rows + 'px';
+  }
+
+  function closeHistory() {
+    request++;
+    history.hidden = jump.hidden = true;
+    pendingScroll = 0;
+  }
+  jump.addEventListener('click', () => {
+    closeHistory();
+    terminal.focus();
+  });
+  history.addEventListener('keydown', event => {
+    if (event.key === 'Escape') jump.click();
+  });
+  session.onChatOutput = () => {
+    clearTimeout(redraw);
+    redraw = setTimeout(() => {
+      session.readyPrompt = promptReady(session);
+      updateWorkspaceState(session);
+      if (!history.hidden) layoutHistory();
+    }, 160);
+  };
+  const resize = terminal.onResize(() => {
+    if (!history.hidden) layoutHistory();
+  });
+
+  async function openHistory() {
+    const current = ++request;
     try {
-      while (session.running && pendingLines) {
-        const lines = pendingLines;
-        pendingLines = 0;
-        await window.desk.scrollChat(session.id, lines);
-      }
+      const output = await window.desk.chatScrollback(session.id, promptRow() - 1);
+      if (current !== request) return;
+      history.textContent = output.trimEnd();
+      layoutHistory();
+      history.hidden = jump.hidden = false;
+      history.scrollTop = history.scrollHeight - history.clientHeight + pendingScroll;
     } catch (error) {
-      pendingLines = 0;
-      if (session.running) setError(error);
+      if (current === request && session.running) setError(error);
     } finally {
-      scrolling = false;
+      if (current === request) pendingScroll = 0;
     }
   }
-  // Capture wheel input before xterm can translate it into terminal keys.
-  // That keeps scroll gestures from recalling prompts with Arrow Up.
   const onWheel = event => {
-    if (!event.deltaY) return;
+    if (!event.deltaY || history.contains(event.target)) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    if (!session.running) return;
-    const lineHeight = 32;
-    const delta = event.deltaMode === WheelEvent.DOM_DELTA_LINE
-      ? event.deltaY
-      : event.deltaY / lineHeight;
-    const steps = Math.max(1, Math.min(60, Math.ceil(Math.abs(delta))));
-    pendingLines = Math.max(-60, Math.min(60, pendingLines + Math.sign(delta) * steps));
-    if (!scrolling) scroll();
+    const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? body.clientHeight : 1);
+    if (!history.hidden) {
+      history.scrollTop += delta;
+    } else if (session.running && (pendingScroll || delta < 0)) {
+      const opening = pendingScroll !== 0;
+      pendingScroll = Math.min(-1, pendingScroll + delta);
+      if (!opening) openHistory();
+    }
   };
   const onKeyDown = event => {
+    if (history.contains(event.target)) return;
     if (event.altKey || event.metaKey || event.isComposing) return;
     if (event.ctrlKey && ['KeyC', 'KeyV'].includes(event.code)) {
       event.stopImmediatePropagation();
@@ -84,6 +133,9 @@ function configureChatInput(session) {
   session.body.addEventListener('wheel', onWheel, { capture: true, passive: false });
   session.body.addEventListener('keydown', onKeyDown, true);
   session.disposeChatInput = () => {
+    clearTimeout(redraw);
+    closeHistory();
+    resize.dispose();
     session.body.removeEventListener('wheel', onWheel, true);
     session.body.removeEventListener('keydown', onKeyDown, true);
   };

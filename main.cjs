@@ -316,14 +316,11 @@ register('update-chat-agent', (id, cols, rows, candidate) => {
   starting.set(id, restart);
   return restart.finally(() => starting.delete(id));
 });
-register('chat-scroll', (id, lines) => {
-  if (!chats.has(id) || !Number.isInteger(lines) || !lines) return;
-  const count = Math.min(60, Math.abs(lines));
-  const scroll = 'send-keys -X -N ' + count + (lines < 0 ? ' scroll-up' : ' scroll-down');
-  const enterCopyMode = lines < 0 ? 'copy-mode -e ; ' + scroll : '';
-  return queueChatControl(id, () =>
-    run(tmux, tmuxArgs(id, 'if-shell', '-F', '-t', id, '#{pane_in_mode}', scroll, enterCopyMode),
-      { windowsHide: true, timeout: 3000 }));
+register('chat-scrollback', async (id, end) => {
+  if (!chats.has(id) || !Number.isInteger(end) || end < -1 || end > 999) return '';
+  const { stdout } = await run(tmux, tmuxArgs(id, 'capture-pane', '-p', '-J', '-S', '-2000', '-E', String(end), '-t', id),
+    { windowsHide: true, timeout: 3000, maxBuffer: 4 * 1024 * 1024 });
+  return stdout;
 });
 register('chat-newline', id => {
   if (!chats.has(id)) return;

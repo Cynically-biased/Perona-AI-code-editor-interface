@@ -417,7 +417,7 @@ async function startSession(chat, project, record, usePickedFolder) {
   const extra = record !== project;
   const view = createWorkspace();
   const body = view.root.querySelector('.agent-terminal');
-  const { terminal, fit } = createTerminal();
+  const { terminal, fit } = createTerminal({ cursorBlink: false });
   const session = { id, chat, folder, project, record, extra, agent: record.agent ?? chat.agent,
     body, terminal, view, running: false, ended: false };
   configureWorkspace(session);
@@ -443,6 +443,7 @@ async function startSession(chat, project, record, usePickedFolder) {
     await window.desk.start(id, session.agent, cols, rows, usePickedFolder, chat.id, chat.title.textContent);
     session.updateStatus = '';
     session.running = !session.ended;
+    session.onChatOutput();
     if (session.running && (terminal.cols !== cols || terminal.rows !== rows)) {
       window.desk.resize(id, terminal.cols, terminal.rows).catch(setError);
     }
@@ -464,7 +465,7 @@ async function startSession(chat, project, record, usePickedFolder) {
 window.desk.onData((id, data) => {
   const session = sessions.get(id);
   if (!session) return;
-  session.terminal.write(data, () => updateWorkspaceState(session));
+  session.terminal.write(data, session.onChatOutput);
 });
 window.desk.onAgentUpdate((id, status) => {
   const session = sessions.get(id);
@@ -479,12 +480,14 @@ async function updateChatAgent(session) {
   const { terminal, chat } = session;
   session.updateStatus = 'Updating agent…';
   session.running = session.ended = false;
+  session.readyPrompt = false;
   updateWorkspaceState(session);
   if (chat.current === session) updateChat(chat);
   try {
     const result = await window.desk.updateAgent(session.id, terminal.cols, terminal.rows, session.providerId);
     if (!result || sessions.get(session.id) !== session) return;
     session.running = !session.ended;
+    session.onChatOutput();
     if (session.running) await window.desk.resize(session.id, terminal.cols, terminal.rows);
     if (result.updateError) terminal.writeln('\r\n[' + result.updateError + ']');
     if (chat === activeChat && chat.current === session && isViewVisible(session.view, 'chat')) terminal.focus();

@@ -252,7 +252,21 @@ dialog input {
 .project-shell-status, .agent-terminal-status { color: var(--muted); font-size: 12px; }
 .project-shell h3 span { font: 12px system-ui, sans-serif; color: var(--muted); margin-left: 5px; }
 .agent-terminal-view .agent-terminal-heading {
-  flex: none; min-height: 36px; background: var(--panel); padding: 5px 12px;
+  flex: none; min-height: 36px; background: var(--panel); padding: 5px 12px; overflow-x: auto;
+}
+.agent-terminal-heading h3, .agent-terminal-heading button { flex: none; white-space: nowrap; }
+.agent-terminal-status { min-width: 0; inline-size: 7em; flex: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-terminal { position: relative; }
+.agent-terminal.is-working .xterm .xterm-rows .xterm-cursor.xterm-cursor {
+  animation: none; outline: none; box-shadow: none; border-bottom: 0;
+  color: inherit !important; background-color: transparent !important;
+}
+.jump-to-present { flex: none; white-space: nowrap; }
+.chat-scrollback {
+  position: absolute; z-index: 2; inset: 0 0 auto; margin: 0; padding-right: 12px;
+  overflow: auto; overscroll-behavior: contain; white-space: pre-wrap; overflow-wrap: anywhere;
+  background: var(--terminal); color: var(--text); border-bottom: 1px solid var(--line);
+  font: 13px/1.2 "Cascadia Mono", Consolas, monospace;
 }
 .project-view { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; }
 .view-state { margin: 12px; color: var(--muted); }

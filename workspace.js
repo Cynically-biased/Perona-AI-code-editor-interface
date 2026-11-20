@@ -64,10 +64,12 @@ function promptReady(session) {
 function updateWorkspaceState(session) {
   const { view } = session;
   const working = session.running && view.snapshot.working;
+  const ready = session.running && !working && session.readyPrompt;
   const status = session.updateStatus || (session.ended ? 'Session ended' : !session.running ? 'Starting…'
-    : working ? 'Working…' : promptReady(session) ? 'Ready' : 'Agent session');
+    : working ? 'Working…' : ready ? 'Ready' : 'Agent session');
   view.updateAgent.disabled = Boolean(session.updateStatus || session.launchFailed ||
-    (!session.ended && (!session.running || working || !promptReady(session))));
+    (!session.ended && !ready));
+  session.body.classList.toggle('is-working', working);
   if (view.terminalStatus.textContent !== status) view.terminalStatus.textContent = status;
   view.dockPanels.get('workflow').querySelector('.workflow-state').textContent = working ? 'Working…' : '';
 }
@@ -98,8 +100,7 @@ async function refreshHistory(session) {
   if (view.refreshing || session.launchFailed || (!session.running && !session.ended)) return;
   view.refreshing = true;
   try {
-    const ready = promptReady(session);
-    const snapshot = await window.desk.history(session.id, session.providerId, ready);
+    const snapshot = await window.desk.history(session.id, session.providerId, session.readyPrompt);
     if (!sessions.has(session.id)) return;
     if (snapshot.thread) session.providerBound = true;
     if (activeChat?.current === session && (view.sentAt || view.snapshot.messages.length)
