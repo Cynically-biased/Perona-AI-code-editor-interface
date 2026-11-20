@@ -17,7 +17,7 @@
   scrollbar-color: #855376 var(--workspace);
 }
 * { box-sizing: border-box; }
-body { display: flex; flex-direction: column; height: 100vh; margin: 0; }
+body { display: flex; flex-direction: column; height: 100dvh; margin: 0; overflow: hidden; }
 button {
   color: inherit; background: transparent; border: 1px solid transparent; border-radius: 8px;
   padding: 7px 11px; font: inherit; font-weight: 600; cursor: pointer;
@@ -78,7 +78,7 @@ button:disabled { opacity: .5; cursor: default; }
 }
 
 
-.workspace { display: flex; flex: 1; min-height: 0; }
+.workspace { display: flex; flex: 1; min-height: 0; overflow: hidden; }
 .sidebar {
   flex: 0 0 clamp(220px, 22vw, 286px); min-height: 0; display: flex; flex-direction: column;
   background: linear-gradient(170deg, #3c2233, var(--sidebar) 44%); border-right: 1px solid var(--line);
@@ -141,8 +141,8 @@ button:disabled { opacity: .5; cursor: default; }
   background: radial-gradient(ellipse at 50% 50%, #48263b80, transparent 68%),
     repeating-conic-gradient(from 45deg, #241721 0 25%, #21141d 0 50%) 0 0 / 42px 42px;
 }
-#empty { place-self: center; text-align: center; padding: 22px 20px 26px; }
-.portrait-stage { position: relative; width: min(310px, 64vw); height: 186px; margin: 0 auto; }
+#empty { place-self: center; max-width: 100%; max-height: 100%; overflow: auto; text-align: center; padding: 22px 20px 26px; }
+.portrait-stage { position: relative; width: min(310px, 64vw); max-width: 100%; height: 186px; margin: 0 auto; }
 .parasol {
   position: absolute; inset: 0 6px auto; height: 124px; border: 1px solid #be7799;
   border-radius: 54% 54% 21% 21% / 100% 100% 18% 18%;
@@ -209,7 +209,7 @@ button:disabled { opacity: .5; cursor: default; }
 .chat-actions button { min-height: 36px; white-space: nowrap; }
 .chat-actions button:not(.pane-close) { color: var(--muted); font-size: 13px; }
 .pane-close { min-width: 38px; }
-.terminal-pane { flex: 1; min-width: 0; min-height: 0; padding: 16px 20px; background: var(--terminal); }
+.terminal-pane { flex: 1; min-width: 0; min-height: 0; margin: 8px 12px; overflow: hidden; background: var(--terminal); }
 .terminal-pane .xterm { height: 100%; }
 
 dialog {
@@ -254,7 +254,6 @@ dialog input {
 .agent-terminal-view .agent-terminal-heading {
   flex: none; min-height: 36px; background: var(--panel); padding: 5px 12px;
 }
-.agent-terminal { padding: 8px 12px; }
 .project-view { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; }
 .view-state { margin: 12px; color: var(--muted); }
 .view-heading {
@@ -454,6 +453,25 @@ body:has(.perona-pet[data-dragging], #context-menu:popover-open) #local-preview 
   .file-browser { grid-template-columns: minmax(90px, 29%) minmax(0, 1fr); }
   .browser-url { flex-basis: 100px; }
   .browser-project { font-size: 11px; }
+}
+@container (max-width: 270px) {
+  .agent-terminal-heading, .project-shell .view-heading { gap: 5px; padding-inline: 6px; overflow-x: auto; }
+  .agent-terminal-heading > *, .project-shell .view-heading > * { flex-shrink: 0; white-space: nowrap; }
+  .terminal-pane { margin: 4px 6px; }
+}
+@media (max-width: 760px), (max-height: 520px) {
+  .toolbar { min-height: 44px; gap: 5px; padding-inline: 8px; }
+  .toolbar h1 { font-size: 19px; gap: 5px; }
+  .brand-portrait { width: 27px; height: 27px; }
+  .toolbar button { padding-inline: 6px; }
+  .window-control { width: 34px; }
+  .sidebar-projects, .agent-usage { padding: 8px; }
+  .chat > header { gap: 4px 8px; padding: 6px 8px; }
+}
+@media (max-width: 700px) {
+  .sidebar { flex-basis: clamp(145px, 28vw, 195px); }
+  .chat-actions { grid-area: auto / 1 / auto / -1; overflow-x: auto; }
+  .chat-actions button { min-height: 28px; }
 }
 .perona-pet {
   position: fixed; top: 0; left: 0; z-index: 20; pointer-events: none;

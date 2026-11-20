@@ -418,15 +418,13 @@ async function startSession(chat, project, record, usePickedFolder) {
   const view = createWorkspace();
   const body = view.root.querySelector('.agent-terminal');
   const { terminal, fit } = createTerminal();
-  const resize = () => fitTerminal(body, fit);
-  const observer = new ResizeObserver(resize);
   const session = { id, chat, folder, project, record, extra, agent: record.agent ?? chat.agent,
-    body, terminal, observer, view, running: false, ended: false };
+    body, terminal, view, running: false, ended: false };
   configureWorkspace(session);
   configureChatInput(session);
   terminal.open(body);
-  observer.observe(body);
-  resize();
+  session.observer = observeTerminalSize(body, fit);
+  fitTerminal(body, fit);
   terminal.onData(data => {
     if (!session.running) return;
     if (data === '\r') {

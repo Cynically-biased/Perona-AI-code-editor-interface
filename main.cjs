@@ -560,7 +560,7 @@ else app.whenReady().then(() => {
   registerInterface(__dirname);
   window = new BrowserWindow({
     title: 'Perona', icon: path.join(__dirname, 'perona-eb05.ico'),
-    width: 1280, height: 800, minWidth: 720, minHeight: 460,
+    width: 1280, height: 800, minWidth: 520, minHeight: 360,
     titleBarStyle: 'hidden',
     backgroundColor: '#21141d', autoHideMenuBar: true,
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), sandbox: true, webviewTag: true }

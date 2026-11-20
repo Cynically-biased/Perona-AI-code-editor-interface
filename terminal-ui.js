@@ -90,7 +90,23 @@ function configureChatInput(session) {
 }
 
 function fitTerminal(body, fit) {
-  if (body.clientWidth && body.clientHeight) fit.fit();
+  if (!body.clientWidth || !body.clientHeight) return;
+  const dimensions = fit.proposeDimensions();
+  if (dimensions?.rows >= 2 && dimensions.cols <= 1000 && dimensions.rows <= 1000) fit.fit();
+}
+
+function observeTerminalSize(body, fit) {
+  let pending;
+  const observer = new ResizeObserver(() => {
+    clearTimeout(pending);
+    // Let docking and window resize settle before reflowing terminal history.
+    pending = setTimeout(() => fitTerminal(body, fit), 80);
+  });
+  observer.observe(body);
+  return { disconnect() {
+    clearTimeout(pending);
+    observer.disconnect();
+  } };
 }
 
 function configureProjectShell(session) {
@@ -103,8 +119,7 @@ function configureProjectShell(session) {
   const shell = { terminal, fit, body, start, status, backend, state: 'new' };
   session.shell = shell;
   terminal.open(body);
-  shell.observer = new ResizeObserver(() => fitTerminal(body, fit));
-  shell.observer.observe(body);
+  shell.observer = observeTerminalSize(body, fit);
   terminal.onData(data => {
     if (shell.state === 'running') window.desk.projectShellInput(session.id, data).catch(setError);
   });
