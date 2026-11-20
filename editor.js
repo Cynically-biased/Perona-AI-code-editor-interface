@@ -32,9 +32,12 @@ function configureEditor(session) {
   const { view } = session;
   const root = view.filesPanel = view.root.querySelector('[data-panel="files"]');
   const projectRoot = root.querySelector('.file-location');
-  projectRoot.title = 'Drop an item here to move it to the project root';
+  projectRoot.title = 'Drop files here to place them in the project root';
   configureFileDrop(session, projectRoot, () => '');
   const list = root.querySelector('.file-list');
+  configureExternalDrop(root, files => importDroppedFiles(session, '', files));
+  const filesTab = view.root.querySelector('[data-view="files"]');
+  configureExternalDrop(filesTab, files => importDroppedFiles(session, '', files));
   list.addEventListener('contextmenu', event => showContextMenu(event, [
     ['New file', () => openFileAction(session, 'file')],
     ['New folder', () => openFileAction(session, 'directory')],
@@ -236,6 +239,7 @@ async function saveEditor(session) {
       file.revision = result.revision;
       file.mixedEndings = false;
       status = 'Saved';
+      if (file.relative.split('/').at(-1) === '.gitignore') loadFiles(session);
     }
   } catch (error) {
     status = readableError(error);
@@ -274,6 +278,7 @@ function revealFileDirectory(view, directory) {
 
 function configureFileDrop(session, target, directory) {
   const { view } = session;
+  configureExternalDrop(target, files => importDroppedFiles(session, directory(), files));
   const destination = () => {
     if (!view.fileDrag || view.fileBusy || target.disabled) return;
     const from = view.fileDrag;
@@ -302,6 +307,29 @@ function configureFileDrop(session, target, directory) {
     view.fileDrag = undefined;
     moveFileEntry(session, source, path);
   });
+}
+
+async function importDroppedFiles(session, folder, files) {
+  const { view } = session;
+  if (view.fileBusy || !files.length) return;
+  view.fileBusy = true;
+  setError();
+  try {
+    const { copied, existing, skipped } = await window.desk.importProjectFiles(session.id, folder, files);
+    if (sessions.get(session.id) !== session) return;
+    showView(session, 'files');
+    await loadFiles(session);
+    if (existing || skipped) {
+      const details = ['Copied ' + copied + (copied === 1 ? ' file.' : ' files.')];
+      if (existing) details.push(existing + ' already existed.');
+      if (skipped) details.push(skipped + ' could not be copied. Drop regular files into the Files tab.');
+      setError(new Error(details.join(' ')));
+    }
+  } catch (error) {
+    setError(error);
+  } finally {
+    view.fileBusy = false;
+  }
 }
 
 function openFilesUnder(view, relative) {

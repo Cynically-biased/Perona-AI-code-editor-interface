@@ -298,8 +298,11 @@ function createDivider(dock, id) {
     renderGeometry(dock);
   };
   element.addEventListener('pointerdown', event => {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || !event.isPrimary) return;
+    event.preventDefault();
+    event.stopPropagation();
     element.setPointerCapture(event.pointerId);
+    dock.resizing = true;
     setDockBusy(dock, true);
   });
   element.addEventListener('pointermove', event => {
@@ -310,6 +313,7 @@ function createDivider(dock, id) {
     resize(offset / handle.usable);
   });
   element.addEventListener('lostpointercapture', () => {
+    dock.resizing = false;
     setDockBusy(dock, false);
     saveDock(dock);
   });
@@ -416,6 +420,10 @@ function showView(session, name) {
 }
 
 function beginDockDrag(dock, event, drag, image) {
+  if (dock.resizing) {
+    event.preventDefault();
+    return;
+  }
   dock.drag = drag;
   event.dataTransfer.effectAllowed = 'move';
   event.dataTransfer.setData('text/plain', drag.tab ?? drag.pane ?? drag.session);

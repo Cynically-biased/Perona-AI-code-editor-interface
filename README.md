@@ -16,6 +16,8 @@ Perona is a Windows desktop workspace for **Codex CLI** and **Claude Code**. Run
 
 4. Open Perona and click **+ New** under Codex or Claude. New projects start in Documents. Use **Change folder** to select your project directory.
 
+You can also drop a folder from File Explorer onto the **Codex** or **Claude** section to start a project there.
+
 You only need the CLI for the agent you plan to use. Git for Windows is required for the Git tools. XAMPP is optional.
 
 ## Work in a project
@@ -28,7 +30,7 @@ Drag tabs or a tab bar to another pane or to one of its edges to split the works
 | --- | --- |
 | **Chat** | Use the agent's native CLI for prompts, approvals, sign-in, and commands such as `/model`. Perona checks for CLI updates when opening the first chat for each agent. **Update agent** runs the CLI updater and reopens the conversation. |
 | **Workflow** | See recorded commands, tool calls, file changes, and progress. |
-| **Files** | Browse folders, edit code in Monaco, and create, rename, move, or delete entries. Drag files between folders. The editor supports UTF-8 and BOM-marked UTF-16 text files up to 2 MB. |
+| **Files** | Browse folders, edit code in Monaco, and create, rename, move, or delete entries. Git-ignored items appear muted. Drag files between folders. The editor supports UTF-8 and BOM-marked UTF-16 text files up to 2 MB. |
 | **Changes** | Review local Git status and diffs. |
 | **Git** | Initialize Git, stage and commit changes, add a remote, fetch, pull, and push. To publish a new project, create the repository on GitHub or GitLab and paste its clone URL into Perona. |
 | **Preview** | Open a localhost page or a local hosts-file alias. **Use project URL** detects supported XAMPP project URLs. |
@@ -46,6 +48,8 @@ Drag tabs or a tab bar to another pane or to one of its edges to split the works
 
 Use **Ctrl+S** to save an open file in the editor.
 
+Drop files from File Explorer onto the **Files** tab to copy them into the project root, or onto a folder in the tree to copy them there. Existing files with the same name are kept.
+
 ### Sidebar and extras
 
 - **Agent usage** shows provider-reported account limits and charts for the last 24 hours and seven days. Click either agent's name to collapse its section. The charts collect readings while Perona is open. Claude refreshes usage after a supported reply in Perona.
@@ -56,6 +60,8 @@ Use **Ctrl+S** to save an open file in the editor.
 ## Update Perona
 
 The installed app checks GitHub Releases at startup. You can also select **Check for updates** in the title bar. When the download is ready, choose **Restart to update**. If you’re on a build without the updater, install the latest release once to enable it.
+
+To roll back, select **Versions** next to the update button, choose an earlier version, and select **Download**. Choose **Restart to downgrade** when it’s ready. The picker lists releases that include the Windows installer and in-app update metadata.
 
 ## Develop locally
 

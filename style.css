@@ -302,6 +302,8 @@ dialog input {
 .file-list { overflow: auto; border-right: 1px solid var(--line); padding: 6px; }
 .file-entry { width: 100%; text-align: left; font-weight: 400; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .file-entry.directory { color: var(--accent); font-weight: 650; }
+.file-entry.git-ignored { color: #ac91a2; }
+.file-entry.git-ignored .file-format { opacity: .65; }
 .file-entry.directory::before { content: '›'; width: 12px; flex: none; text-align: center; }
 .file-entry.directory[aria-expanded="true"]::before { transform: rotate(90deg); }
 .file-children { margin-left: 14px; border-left: 1px solid var(--line); padding-left: 4px; }
@@ -338,6 +340,7 @@ dialog input {
 .file-editor:focus { outline: 1px solid var(--line); outline-offset: -1px; }
 
 .app-tool { -webkit-app-region: no-drag; color: var(--muted); min-height: 36px; }
+#app-update { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .toolbar { gap: 12px; }
 .project-nav { overflow-x: auto; }
 .project-nav button { flex: none; }
@@ -346,7 +349,7 @@ dialog input {
 .file-list-row .file-entry { flex: 1; min-width: 0; }
 .file-move, .file-remove { flex: none; padding: 5px 7px; color: var(--muted); }
 .file-remove:hover { color: var(--accent); }
-.file-directory-target { outline: 1px solid var(--accent); outline-offset: -1px; background: var(--selected); }
+.file-directory-target, .external-drop-target { outline: 1px solid var(--accent); outline-offset: -1px; background: var(--selected); }
 .context-menu {
   position: fixed; inset: auto; margin: 0; min-width: 155px;
   padding: 4px; border: 1px solid #855376; border-radius: 8px;

@@ -5,8 +5,46 @@ const contextMenu = document.querySelector('#context-menu');
 let confirmationPending = false;
 let menuTrigger;
 let liftedDrag;
+let externalDropTarget;
 const emptyDragImage = document.createElement('canvas');
 emptyDragImage.width = emptyDragImage.height = 1;
+
+function highlightExternalDrop(target) {
+  if (externalDropTarget === target) return;
+  externalDropTarget?.classList.remove('external-drop-target');
+  externalDropTarget = target;
+  target?.classList.add('external-drop-target');
+}
+
+function configureExternalDrop(target, onDrop) {
+  target.addEventListener('dragover', event => {
+    if (!event.dataTransfer.types.includes('Files')) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = 'copy';
+    highlightExternalDrop(target);
+  });
+  target.addEventListener('dragleave', event => {
+    if (externalDropTarget === target && !target.contains(event.relatedTarget)) highlightExternalDrop();
+  });
+  target.addEventListener('drop', event => {
+    if (!event.dataTransfer.types.includes('Files')) return;
+    event.preventDefault();
+    event.stopPropagation();
+    highlightExternalDrop();
+    onDrop(Array.from(event.dataTransfer.files));
+  });
+}
+
+// Keep Chromium from navigating to a file dropped outside a supported target.
+for (const type of ['dragover', 'drop']) {
+  document.addEventListener(type, event => {
+    if (event.dataTransfer?.types.includes('Files')) {
+      event.preventDefault();
+      highlightExternalDrop();
+    }
+  });
+}
 
 function liftDragItem(event, source) {
   releaseDragItem();

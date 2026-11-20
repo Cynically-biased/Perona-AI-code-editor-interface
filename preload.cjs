@@ -1,15 +1,21 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('desk', {
   windowControl: action => ipcRenderer.invoke('window-control', action),
   appUpdateStatus: () => ipcRenderer.invoke('app-update-status'),
   checkAppUpdate: () => ipcRenderer.invoke('app-update-check'),
+  earlierAppVersions: () => ipcRenderer.invoke('app-update-versions'),
+  downloadAppDowngrade: version => ipcRenderer.invoke('app-update-downgrade', version),
   installAppUpdate: () => ipcRenderer.invoke('app-update-install'),
   onAppUpdate: callback => ipcRenderer.on('app-update-status', (_event, status) => callback(status)),
   onConfirmWindowClose: callback => ipcRenderer.on('confirm-window-close', () => callback()),
   onWindowMaximized: callback => ipcRenderer.on('window-maximized', (_event, maximized) => callback(maximized)),
   onWindowMoved: callback => ipcRenderer.on('window-moved', () => callback()),
   defaultFolder: () => ipcRenderer.invoke('default-folder'),
+  addDroppedProject: (id, agent, name, file) =>
+    ipcRenderer.invoke('workspace-add-dropped-project', id, agent, name, webUtils.getPathForFile(file)),
+  importProjectFiles: (id, folder, files) =>
+    ipcRenderer.invoke('project-import-files', id, folder, files.map(file => webUtils.getPathForFile(file))),
   pickChatFolder: (id, agent, currentFolder) => ipcRenderer.invoke('pick-chat-folder', id, agent, currentFolder),
   start: (id, agent, cols, rows, usePickedFolder, chatId, name) =>
     ipcRenderer.invoke('start-chat', id, agent, cols, rows, usePickedFolder, chatId, name),

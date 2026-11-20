@@ -7,10 +7,11 @@ const run = promisify(execFile);
 const busy = new Set();
 const conflictCodes = new Set(['DD', 'AU', 'UD', 'UA', 'DU', 'AA', 'UU']);
 
-async function runGit(folder, args, { readOnly = true, network = false } = {}) {
-  const { stdout } = await run('git.exe', [
+async function runGit(folder, args, { readOnly = true, network = false, input, literalPaths = true } = {}) {
+  const operation = run('git.exe', [
     ...(readOnly ? ['--no-optional-locks'] : []),
-    '--literal-pathspecs', '-c', 'core.fsmonitor=false', '-c', 'color.ui=false',
+    ...(literalPaths ? ['--literal-pathspecs'] : []),
+    '-c', 'core.fsmonitor=false', '-c', 'color.ui=false',
     '-c', 'protocol.allow=never', '-c', 'protocol.https.allow=always',
     '-c', 'protocol.ssh.allow=always', ...args
   ], {
@@ -18,7 +19,12 @@ async function runGit(folder, args, { readOnly = true, network = false } = {}) {
     env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_EDITOR: 'false' },
     timeout: network ? 180000 : readOnly ? 10000 : 60000, maxBuffer: 512 * 1024
   });
-  return stdout;
+  if (input !== undefined) {
+    const stdin = operation.child.stdin;
+    stdin.on('error', () => {});
+    stdin.end(input);
+  }
+  return (await operation).stdout;
 }
 
 function hideCredentials(value) {

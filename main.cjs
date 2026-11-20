@@ -3,7 +3,7 @@ const { execFile, execFileSync } = require('node:child_process');
 const { existsSync, readdirSync, statSync } = require('node:fs');
 const path = require('node:path');
 const { promisify } = require('node:util');
-const { writeFile } = require('node:fs/promises');
+const { realpath, stat, writeFile } = require('node:fs/promises');
 const { codexUsage, claudeUsage, claudeUsageSettings } = require('./agent-usage.cjs');
 const { createUsageHistory } = require('./usage-history.cjs');
 const pty = require('node-pty');
@@ -15,7 +15,7 @@ const { registerInterface } = require('./app-protocol.cjs');
 const { createHistory, resumeThread } = require('./history.cjs');
 const { openWorkspace } = require('./saved-workspace.cjs');
 const { gitStatus, gitAction } = require('./project-git.cjs');
-const { listFolder, previewFile, saveFile, createEntry, moveEntry, removeEntry, projectChanges } = require('./project-files.cjs');
+const { listFolder, previewFile, saveFile, createEntry, importFiles, moveEntry, removeEntry, projectChanges } = require('./project-files.cjs');
 
 app.setName('Perona');
 const run = promisify(execFile);
@@ -41,7 +41,7 @@ let workspace;
 let preview;
 let previewRequest = 0;
 const appUpdates = createAppUpdates(app.isPackaged && process.platform === 'win32',
-  status => send('app-update-status', status));
+  status => send('app-update-status', status), app.getVersion());
 
 function findExecutable(name) {
   const options = { windowsHide: true, encoding: 'utf8' };
@@ -91,6 +91,15 @@ function literal(value) {
 
 register('default-folder', () => defaultFolder);
 register('workspace-load', () => workspace.read());
+register('workspace-add-dropped-project', async (id, agent, name, source) => {
+  if (typeof source !== 'string' || !path.isAbsolute(source)) throw new Error('Drop a project folder from File Explorer.');
+  const folder = await realpath(source).catch(() => null);
+  if (!folder || !(await stat(folder).catch(() => null))?.isDirectory()) {
+    throw new Error('Drop a folder onto Codex or Claude to open a project.');
+  }
+  workspace.add(id, agent, name, id, folder);
+  return folder;
+});
 register('workspace-add-project-chat', (...args) => workspace.addChatInProject(...args));
 register('workspace-remove-project-chat', (chatId, id) => workspace.removeProjectChat(chatId, id));
 register('workspace-save-project-dock', (...args) => workspace.saveProjectDock(...args));
@@ -99,6 +108,8 @@ register('workspace-rename', (chat, name) => workspace.rename(chat, name));
 register('workspace-remove', chat => workspace.remove(chat));
 register('app-update-status', () => appUpdates.status());
 register('app-update-check', () => appUpdates.check());
+register('app-update-versions', () => appUpdates.earlierVersions());
+register('app-update-downgrade', version => appUpdates.downgrade(version));
 register('app-update-install', () => {
   if (starting.size || fileOperations.size || fishInstallation || agentUpdates.size) {
     throw new Error('Wait for the current operation to finish, then restart to update.');
@@ -489,6 +500,8 @@ register('project-save', (id, relative, revision, text) =>
   trackFileWork(saveFile(projectFor(id).cwd, relative, revision, text)));
 register('project-create', (id, relative, type) =>
   trackFileWork(createEntry(projectFor(id).cwd, relative, type)));
+register('project-import-files', (id, relative, sources) =>
+  trackFileWork(importFiles(projectFor(id).cwd, relative, sources)));
 register('project-move', (id, relative, target) =>
   trackFileWork(moveEntry(projectFor(id).cwd, relative, target)));
 register('project-remove', (id, relative, directory) =>

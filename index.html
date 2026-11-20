@@ -26,6 +26,7 @@
     <button id="open-monitor" class="app-tool" type="button">Agents</button>
     <button id="open-services" class="app-tool" type="button">Services</button>
     <button id="app-update" class="app-tool" type="button" hidden>Check for updates</button>
+    <button id="app-versions" class="app-tool" type="button" hidden>Versions</button>
     <div class="window-controls" role="group" aria-label="Window controls">
       <button id="window-minimize" class="window-control" type="button" aria-label="Minimize window" title="Minimize"><span aria-hidden="true"></span></button>
       <button id="window-maximize" class="window-control" type="button" aria-label="Maximize window" title="Maximize"><span aria-hidden="true"></span></button>
@@ -273,6 +274,17 @@
       <div class="dialog-actions">
         <button value="cancel" autofocus>Cancel</button>
         <button value="save" id="confirm-action"></button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="app-version-dialog" aria-labelledby="app-version-heading">
+    <form method="dialog">
+      <h2 id="app-version-heading">Install an earlier version</h2>
+      <label for="app-version-choice">Perona version</label>
+      <select id="app-version-choice" required></select>
+      <div class="dialog-actions">
+        <button value="cancel" formnovalidate>Cancel</button>
+        <button value="download">Download</button>
       </div>
     </form>
   </dialog>

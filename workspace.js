@@ -139,7 +139,11 @@ async function loadFileBranch(session, directory, list) {
       if (!entry.directory) button.append(fileFormatBadge(entry.name));
       button.append(node('span', entry.name, 'file-name'));
       button.type = 'button';
-      button.title = entry.name;
+      button.title = entry.name + (entry.ignored ? ' (Git ignored)' : '');
+      if (entry.ignored) {
+        button.classList.add('git-ignored');
+        button.setAttribute('aria-label', button.title);
+      }
       const relative = directory ? directory + '/' + entry.name : entry.name;
       const branch = entry.directory ? node('div', '', 'file-children') : null;
       const toggle = () => {

@@ -1,4 +1,5 @@
 const { createHash, randomUUID } = require('node:crypto');
+const { constants } = require('node:fs');
 const { execFile } = require('node:child_process');
 const fs = require('node:fs/promises');
 const path = require('node:path');
@@ -39,7 +40,45 @@ async function listFolder(folder, relative) {
     .map(entry => ({ name: entry.name, directory: entry.isDirectory() }))
     .sort((a, b) => Number(b.directory) - Number(a.directory)
       || a.name.localeCompare(b.name, undefined, { numeric: true }));
-  return { entries: visible.slice(0, directoryLimit), truncated: visible.length > directoryLimit };
+  const listed = visible.slice(0, directoryLimit);
+  if (listed.length) {
+    const names = listed.map(entry => './' + entry.name + (entry.directory ? '/' : ''));
+    const output = await runGit(target, ['check-ignore', '-z', '--stdin'], {
+      input: names.join('\0') + '\0', literalPaths: false
+    }).catch(() => '');
+    const ignored = new Set(output.split('\0'));
+    for (const [index, entry] of listed.entries()) entry.ignored = ignored.has(names[index]);
+  }
+  return { entries: listed, truncated: visible.length > directoryLimit };
+}
+
+async function importFiles(folder, relative, sources) {
+  if (!Array.isArray(sources) || !sources.length || sources.length > directoryLimit) {
+    throw new Error('Drop up to ' + directoryLimit + ' files at a time.');
+  }
+  const target = await projectPath(folder, relative);
+  if (!(await fs.stat(target)).isDirectory()) throw new Error('Drop files onto a project folder.');
+  const result = { copied: 0, existing: 0, skipped: 0 };
+  for (const source of sources) {
+    if (typeof source !== 'string' || !path.isAbsolute(source) || /\0/.test(source)) {
+      result.skipped++;
+      continue;
+    }
+    const name = path.basename(source);
+    try {
+      entryPath(name);
+      if (!(await fs.lstat(source)).isFile()) {
+        result.skipped++;
+        continue;
+      }
+      await fs.copyFile(source, path.join(target, name), constants.COPYFILE_EXCL);
+      result.copied++;
+    } catch (error) {
+      if (error.code === 'EEXIST') result.existing++;
+      else result.skipped++;
+    }
+  }
+  return result;
 }
 
 function revision(data) {
@@ -225,4 +264,4 @@ async function projectChanges(folder) {
   }
 }
 
-module.exports = { listFolder, previewFile, saveFile, createEntry, moveEntry, removeEntry, projectChanges };
+module.exports = { listFolder, previewFile, saveFile, createEntry, importFiles, moveEntry, removeEntry, projectChanges };

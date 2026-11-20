@@ -3,14 +3,18 @@ const sessions = new Map();
 const counters = { claude: 0, codex: 0 };
 const names = { claude: 'Claude', codex: 'Codex' };
 const updateButton = document.getElementById('app-update');
+const versionsButton = document.getElementById('app-versions');
+const versionDialog = document.getElementById('app-version-dialog');
+const versionChoice = document.getElementById('app-version-choice');
 let updateState;
 
-function showAppUpdate({ state, version }) {
-  updateState = state;
-  updateButton.hidden = state === 'unavailable';
-  updateButton.disabled = ['checking', 'downloading', 'installing'].includes(state);
+function showAppUpdate({ state, version, downgrade }) {
+  updateState = { state, downgrade };
+  updateButton.hidden = versionsButton.hidden = state === 'unavailable';
+  updateButton.disabled = versionsButton.disabled = ['checking', 'downloading', 'installing'].includes(state);
   updateButton.textContent = {
-    checking: 'Checking…', downloading: 'Downloading update…', ready: 'Restart to update',
+    checking: 'Checking…', downloading: downgrade ? 'Downloading v' + version + '…' : 'Downloading update…',
+    ready: downgrade ? 'Restart to downgrade' : 'Restart to update',
     installing: 'Restarting…', current: 'Up to date', error: 'Retry update check'
   }[state] ?? 'Check for updates';
   updateButton.title = version ? 'Perona ' + version : 'Check for a Perona update';
@@ -18,9 +22,27 @@ function showAppUpdate({ state, version }) {
 
 window.desk.onAppUpdate(showAppUpdate);
 window.desk.appUpdateStatus().then(showAppUpdate).catch(setError);
+versionsButton.addEventListener('click', async () => {
+  versionsButton.disabled = true;
+  try {
+    const versions = await window.desk.earlierAppVersions();
+    if (document.querySelector('dialog[open]')) return;
+    if (!versions.length) throw new Error('No earlier releases with in-app installation files are available.');
+    versionChoice.replaceChildren(...versions.map(version => new Option('v' + version, version)));
+    versionDialog.returnValue = '';
+    versionDialog.showModal();
+    syncPreview();
+  } catch (error) { setError(error); }
+  finally {
+    versionsButton.disabled = ['checking', 'downloading', 'installing'].includes(updateState?.state);
+  }
+});
+versionDialog.addEventListener('close', () => {
+  if (versionDialog.returnValue === 'download') window.desk.downloadAppDowngrade(versionChoice.value).catch(setError);
+});
 updateButton.addEventListener('click', async () => {
   try {
-    if (updateState !== 'ready') {
+    if (updateState?.state !== 'ready') {
       await window.desk.checkAppUpdate();
       return;
     }
@@ -28,7 +50,7 @@ updateButton.addEventListener('click', async () => {
       throw new Error('Save your edits before restarting to update Perona.');
     }
     if ([...sessions.values()].some(session => session.running || session.shell?.state === 'running') &&
-        !await confirmAction('Restart to update Perona?', 'Restarting will close active agent chats and project terminals.', 'Restart to update')) return;
+        !await confirmAction(updateButton.textContent + '?', 'Restarting will close active agent chats and project terminals.', updateButton.textContent)) return;
     if (hasUnsavedServiceConfig() || [...sessions.values()].some(session => hasUnsavedFile(session.view))) {
       throw new Error('Save your edits before restarting to update Perona.');
     }
@@ -352,14 +374,17 @@ function createChat(agent, id, label, projects = [], selectedId) {
   return chat;
 }
 
-async function openChat(agent) {
+async function openChat(agent, droppedFolder) {
   if (!workspaceReady) return;
   setError();
   try {
-    const folder = await window.desk.defaultFolder();
     const id = crypto.randomUUID();
+    const name = names[agent] + ' ' + ++counters[agent];
+    const folder = droppedFolder
+      ? await window.desk.addDroppedProject(id, agent, name, droppedFolder)
+      : await window.desk.defaultFolder();
     const project = { id, folder, view: 'chat' };
-    const chat = createChat(agent, id, names[agent] + ' ' + ++counters[agent], [project], id);
+    const chat = createChat(agent, id, name, [project], id);
     selectChat(chat);
     await resumeProject(chat, id);
   } catch (error) {
@@ -601,7 +626,12 @@ window.desk.onExit((id, code) => {
 });
 
 for (const agent of Object.keys(names)) {
-  document.getElementById(agent).addEventListener('click', () => openChat(agent));
+  const button = document.getElementById(agent);
+  button.addEventListener('click', () => openChat(agent));
+  configureExternalDrop(button.closest('.agent'), files => {
+    if (files.length === 1) openChat(agent, files[0]);
+    else setError(new Error('Drop one project folder at a time.'));
+  });
 }
 
 function setChatName(chat, name) {
