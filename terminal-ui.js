@@ -18,18 +18,22 @@ function createTerminal() {
   terminal.loadAddon(fit);
   terminal.attachCustomKeyEventHandler(event => {
     if (!event.ctrlKey || !event.shiftKey || !['KeyC', 'KeyV'].includes(event.code)) return true;
-    if (event.type === 'keydown') {
-      event.preventDefault();
-      if (event.code === 'KeyC') {
-        const selection = terminal.getSelection();
-        if (selection) navigator.clipboard.writeText(selection).catch(setError);
-      } else {
-        navigator.clipboard.readText().then(text => terminal.paste(text)).catch(setError);
-      }
-    }
+    if (event.type === 'keydown') terminalClipboard(event, terminal);
     return false;
   });
   return { terminal, fit };
+}
+
+function terminalClipboard(event, terminal) {
+  event.preventDefault();
+  if (event.code === 'KeyC') {
+    const selection = terminal.getSelection();
+    if (selection) navigator.clipboard.writeText(selection).catch(setError);
+  } else {
+    navigator.clipboard.readText().then(text => {
+      if (text) terminal.paste(text);
+    }).catch(setError);
+  }
 }
 
 function configureChatInput(session) {
@@ -66,8 +70,13 @@ function configureChatInput(session) {
     if (!scrolling) scroll();
   };
   const onKeyDown = event => {
-    if (event.key !== 'Enter' || (!event.shiftKey && !event.ctrlKey)
-        || event.altKey || event.metaKey || event.isComposing) return;
+    if (event.altKey || event.metaKey || event.isComposing) return;
+    if (event.ctrlKey && ['KeyC', 'KeyV'].includes(event.code)) {
+      event.stopImmediatePropagation();
+      terminalClipboard(event, session.terminal);
+      return;
+    }
+    if (event.key !== 'Enter' || (!event.shiftKey && !event.ctrlKey)) return;
     event.preventDefault();
     event.stopImmediatePropagation();
     if (session.running) window.desk.newlineChat(session.id).catch(setError);
