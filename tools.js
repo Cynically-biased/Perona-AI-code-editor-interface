@@ -127,12 +127,13 @@ contextMenu.addEventListener('keydown', event => {
   }
 });
 
-async function confirmAction(title, message, action) {
+async function confirmAction(title, message, action, cancel = 'Cancel') {
   if (confirmationPending) return false;
   confirmationPending = true;
   confirmDialog.querySelector('#confirm-title').textContent = title;
   confirmDialog.querySelector('#confirm-message').textContent = message;
   confirmDialog.querySelector('#confirm-action').textContent = action;
+  confirmDialog.querySelector('[value="cancel"]').textContent = cancel;
   confirmDialog.returnValue = '';
   try {
     confirmDialog.showModal();

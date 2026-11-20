@@ -315,14 +315,32 @@ async function importDroppedFiles(session, folder, files) {
   view.fileBusy = true;
   setError();
   try {
-    const { copied, existing, skipped } = await window.desk.importProjectFiles(session.id, folder, files);
+    const result = await window.desk.importProjectFiles(session.id, folder, files);
     if (sessions.get(session.id) !== session) return;
     showView(session, 'files');
+    for (const conflict of result.conflicts) {
+      const relative = [folder, conflict.name].filter(Boolean).join('/');
+      const affected = openFilesUnder(view, relative);
+      if (affected.some(dirty)) {
+        result.skipped++;
+        continue;
+      }
+      const message = relative + ' already exists. Replace ' +
+        (conflict.directory ? 'the entire folder and everything inside it?' : 'the existing file?') +
+        ' The original will be moved to the Recycle Bin when possible.';
+      if (!await confirmAction('Replace ' + (conflict.directory ? 'folder?' : 'file?'), message, 'Replace', 'Skip')) continue;
+      if (sessions.get(session.id) !== session) return;
+      const replaced = await window.desk.importProjectFiles(session.id, folder,
+        [files[conflict.index]], { name: conflict.name, revision: conflict.revision });
+      if (replaced.copied) closeFileTabs(session, affected);
+      result.skipped += replaced.skipped + replaced.conflicts.length;
+      result.recovery.push(...replaced.recovery);
+    }
     await loadFiles(session);
-    if (existing || skipped) {
-      const details = ['Copied ' + copied + (copied === 1 ? ' file.' : ' files.')];
-      if (existing) details.push(existing + ' already existed.');
-      if (skipped) details.push(skipped + ' could not be copied. Drop regular files into the Files tab.');
+    if (result.skipped || result.recovery.length) {
+      const details = [];
+      if (result.skipped) details.push(result.skipped + ' item(s) could not be copied or replaced. Check for unsaved edits or changes at the destination.');
+      if (result.recovery.length) details.push('Originals kept at: ' + result.recovery.join(', '));
       setError(new Error(details.join(' ')));
     }
   } catch (error) {

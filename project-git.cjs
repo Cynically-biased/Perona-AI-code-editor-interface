@@ -1,6 +1,6 @@
 const { execFile } = require('node:child_process');
 const { realpath } = require('node:fs/promises');
-const { relative } = require('node:path');
+const { isAbsolute, relative } = require('node:path');
 const { promisify } = require('node:util');
 
 const run = promisify(execFile);
@@ -101,6 +101,37 @@ function remoteUrl(value) {
   return url;
 }
 
+function untrackPath(value) {
+  if (typeof value !== 'string' || !value.trim() || value.length > 4096 || isAbsolute(value)
+      || /[:\r\n\0]/.test(value)) throw new Error('Enter a file or folder path relative to this repository.');
+  const target = value.replaceAll('\\', '/').replace(/\/$/, '');
+  if (target.split('/').some(part => !part || part === '.' || part === '..' || part.toLowerCase() === '.git')) {
+    throw new Error('Choose a file or folder inside the repository.');
+  }
+  return target;
+}
+
+function hasLocalStagedRemovals(files) {
+  const untracked = new Set(files.filter(file => file.code === '??').map(file => file.path));
+  return files.some(file => file.code[0] === 'D' && untracked.has(file.path));
+}
+
+async function trackedGitPaths(folder) {
+  const root = await runGit(folder, ['rev-parse', '--show-toplevel']);
+  if (relative(await realpath(root.trim()), await realpath(folder))) return [];
+  const result = new Set();
+  for (const file of (await runGit(folder, ['ls-files', '-z', '--cached'])).split('\0')) {
+    if (!file) continue;
+    const parts = file.split('/');
+    for (let index = 1; index < parts.length && result.size < 1500; index++) {
+      result.add(parts.slice(0, index).join('/') + '/');
+    }
+    if (result.size >= 1500) break;
+    result.add(file);
+  }
+  return [...result];
+}
+
 async function gitAction(folder, action, data) {
   const key = (await realpath(folder)).toLowerCase();
   if (busy.has(key)) throw new Error('A Git operation is already running for this project.');
@@ -125,7 +156,13 @@ async function gitAction(folder, action, data) {
       }
       case 'stage-all':
         if (status.conflicts) throw new Error('Resolve and stage conflicted files individually.');
+        if (hasLocalStagedRemovals(status.files)) {
+          throw new Error('Commit the staged removals or ignore their local copies before using Stage all. Stage all would add those copies back.');
+        }
         return await git(['add', '--all']);
+      case 'untrack':
+        if (status.conflicts) throw new Error('Resolve Git conflicts before removing tracked files.');
+        return await git(['rm', '-r', '--cached', '--', untrackPath(data)]);
       case 'commit':
         if (status.conflicts || !status.files.some(file => ![' ', '?'].includes(file.code[0]))) {
           throw new Error('Stage your changes and resolve any conflicts before committing.');
@@ -168,4 +205,4 @@ async function gitAction(folder, action, data) {
   }
 }
 
-module.exports = { runGit, gitStatus, gitAction };
+module.exports = { runGit, gitStatus, gitAction, trackedGitPaths };

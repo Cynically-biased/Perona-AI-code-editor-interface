@@ -15,7 +15,10 @@ function configureGit(session) {
       button => [button.dataset.gitAction, button])),
     origin: find('.git-origin'),
     identity: find('.git-identity'),
-    commit: find('.git-commit')
+    commit: find('.git-commit'),
+    untrack: find('.git-untrack'),
+    untrackPanel: find('.git-untrack-panel'),
+    tracked: find('.git-tracked-paths')
   };
 
   git.refresh.addEventListener('click', () => refreshGit(session));
@@ -50,6 +53,31 @@ function configureGit(session) {
         ? { name: input.value, email: form.elements.email.value } : input.value;
       runGitAction(session, action, data);
     });
+  }
+  const pathInput = git.untrack.querySelector('input');
+  git.tracked.id = 'git-tracked-' + session.id;
+  pathInput.setAttribute('list', git.tracked.id);
+  git.untrackPanel.addEventListener('toggle', () => {
+    if (git.untrackPanel.open) loadTrackedGitPaths(session);
+  });
+  git.untrack.addEventListener('submit', async event => {
+    event.preventDefault();
+    const target = pathInput.value;
+    if (!target.trim() || git.busy) return;
+    if (!await confirmAction('Remove from Git?',
+      target + ' will be staged for removal. Your local copies stay. Commit and push to apply this to the remote branch.',
+      'Stage removal')) return;
+    await runGitAction(session, 'untrack', target);
+  });
+}
+
+async function loadTrackedGitPaths(session) {
+  const git = session.view.git;
+  try {
+    const paths = await window.desk.gitTrackedPaths(session.id);
+    git.tracked.replaceChildren(...paths.map(path => new Option(path, path)));
+  } catch {
+    git.tracked.replaceChildren();
   }
 }
 
@@ -87,7 +115,7 @@ function renderGit(session, status) {
     const staged = ![' ', '?'].includes(file.code[0]);
     const label = node('span', file.path);
     label.title = file.path;
-    item.append(label, node('small', file.code === '??' ? 'Untracked'
+    item.append(label, node('small', file.code[0] === 'D' ? 'Staged removal' : file.code === '??' ? 'Untracked'
       : staged && file.code[1] !== ' ' ? 'Staged + modified'
       : staged ? 'Staged' : 'Modified'));
     if (file.code[1] !== ' ') item.append(toolButton('Stage', () => runGitAction(session, 'stage', file.path)));
@@ -102,7 +130,7 @@ function renderGit(session, status) {
 const gitSuccess = {
   init: 'Git initialized.', origin: 'Origin connected.', identity: 'Commit author saved.',
   commit: 'Commit created.', fetch: 'Fetched from origin.', pull: 'Pulled remote changes.',
-  push: 'Pushed to origin.'
+  push: 'Pushed to origin.', untrack: 'Removal staged. Local copies are still on disk.'
 };
 
 async function refreshGit(session, action, data) {
@@ -116,13 +144,14 @@ async function refreshGit(session, action, data) {
     if (action) {
       try {
         await window.desk.gitAction(session.id, action, data);
-        if (action === 'commit' || action === 'origin') git[action].reset();
+        if (['commit', 'origin', 'untrack'].includes(action)) git[action].reset();
         if (isViewVisible(session.view, 'changes')) loadChanges(session);
       } catch (failure) {
         error = readableError(failure);
       }
     }
     const notice = renderGit(session, await window.desk.gitStatus(session.id));
+    if (git.untrackPanel.open && git.status.kind === 'ready') loadTrackedGitPaths(session);
     git.message.textContent = error || gitSuccess[action] || notice;
     git.controls.disabled = false;
   } catch (failure) {

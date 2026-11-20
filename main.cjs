@@ -14,7 +14,7 @@ const xampp = require('./xampp.cjs');
 const { registerInterface } = require('./app-protocol.cjs');
 const { createHistory, resumeThread } = require('./history.cjs');
 const { openWorkspace } = require('./saved-workspace.cjs');
-const { gitStatus, gitAction } = require('./project-git.cjs');
+const { gitStatus, gitAction, trackedGitPaths } = require('./project-git.cjs');
 const { listFolder, previewFile, saveFile, createEntry, importFiles, moveEntry, removeEntry, projectChanges } = require('./project-files.cjs');
 
 app.setName('Perona');
@@ -500,14 +500,15 @@ register('project-save', (id, relative, revision, text) =>
   trackFileWork(saveFile(projectFor(id).cwd, relative, revision, text)));
 register('project-create', (id, relative, type) =>
   trackFileWork(createEntry(projectFor(id).cwd, relative, type)));
-register('project-import-files', (id, relative, sources) =>
-  trackFileWork(importFiles(projectFor(id).cwd, relative, sources)));
+register('project-import-files', (id, relative, sources, replacement) =>
+  trackFileWork(importFiles(projectFor(id).cwd, relative, sources, replacement, target => shell.trashItem(target))));
 register('project-move', (id, relative, target) =>
   trackFileWork(moveEntry(projectFor(id).cwd, relative, target)));
 register('project-remove', (id, relative, directory) =>
   trackFileWork(removeEntry(projectFor(id).cwd, relative, directory, target => shell.trashItem(target))));
 register('project-changes', id => projectChanges(projectFor(id).cwd));
 register('git-status', id => gitStatus(projectFor(id).cwd));
+register('git-tracked-paths', id => trackedGitPaths(projectFor(id).cwd));
 register('git-action', (id, action, data) => trackFileWork(gitAction(projectFor(id).cwd, action, data)));
 register('git-create-page', provider => {
   if (provider === 'github') return shell.openExternal('https://github.com/new');

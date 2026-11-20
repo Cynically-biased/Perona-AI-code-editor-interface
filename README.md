@@ -48,7 +48,9 @@ Drag tabs or a tab bar to another pane or to one of its edges to split the works
 
 Use **Ctrl+S** to save an open file in the editor.
 
-Drop files from File Explorer onto the **Files** tab to copy them into the project root, or onto a folder in the tree to copy them there. Existing files with the same name are kept.
+In **Git → Remove from Git**, choose a tracked path to stage its removal while keeping its local copy. Commit and push to remove it from the current remote branch. Add the path to `.gitignore` if it should stay untracked.
+
+Drop files or folders from File Explorer onto the **Files** tab to copy them into the project root, or onto a folder in the tree to copy them there. If the destination already contains an item with that name, choose **Replace** or **Skip**. Replacing a folder replaces all its contents.
 
 ### Sidebar and extras
 

@@ -14,8 +14,8 @@ contextBridge.exposeInMainWorld('desk', {
   defaultFolder: () => ipcRenderer.invoke('default-folder'),
   addDroppedProject: (id, agent, name, file) =>
     ipcRenderer.invoke('workspace-add-dropped-project', id, agent, name, webUtils.getPathForFile(file)),
-  importProjectFiles: (id, folder, files) =>
-    ipcRenderer.invoke('project-import-files', id, folder, files.map(file => webUtils.getPathForFile(file))),
+  importProjectFiles: (id, folder, files, replacement) =>
+    ipcRenderer.invoke('project-import-files', id, folder, files.map(file => webUtils.getPathForFile(file)), replacement),
   pickChatFolder: (id, agent, currentFolder) => ipcRenderer.invoke('pick-chat-folder', id, agent, currentFolder),
   start: (id, agent, cols, rows, usePickedFolder, chatId, name) =>
     ipcRenderer.invoke('start-chat', id, agent, cols, rows, usePickedFolder, chatId, name),
@@ -52,6 +52,7 @@ contextBridge.exposeInMainWorld('desk', {
   removeEntry: (id, relative, directory) => ipcRenderer.invoke('project-remove', id, relative, directory),
   changes: id => ipcRenderer.invoke('project-changes', id),
   gitStatus: id => ipcRenderer.invoke('git-status', id),
+  gitTrackedPaths: id => ipcRenderer.invoke('git-tracked-paths', id),
   gitAction: (id, action, data) => ipcRenderer.invoke('git-action', id, action, data),
   gitCreatePage: provider => ipcRenderer.invoke('git-create-page', provider),
   input: (id, data) => ipcRenderer.invoke('chat-input', id, data),

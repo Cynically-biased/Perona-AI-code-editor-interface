@@ -52,14 +52,34 @@ async function listFolder(folder, relative) {
   return { entries: listed, truncated: visible.length > directoryLimit };
 }
 
-async function importFiles(folder, relative, sources) {
+function importRevision(stat) {
+  return [stat.dev, stat.ino, stat.size, stat.mtimeMs, stat.ctimeMs].join(':');
+}
+
+async function copyImport(source, destination, directory) {
+  if (!directory) {
+    await fs.copyFile(source, destination, constants.COPYFILE_EXCL);
+    return;
+  }
+  await fs.cp(source, destination, {
+    recursive: true, force: false, errorOnExist: true,
+    async filter(item) {
+      entryPath(path.basename(item));
+      const stat = await fs.lstat(item);
+      if (!stat.isFile() && !stat.isDirectory()) throw new Error('Folder contains an unsupported item.');
+      return true;
+    }
+  });
+}
+
+async function importFiles(folder, relative, sources, replacement, trash) {
   if (!Array.isArray(sources) || !sources.length || sources.length > directoryLimit) {
     throw new Error('Drop up to ' + directoryLimit + ' files at a time.');
   }
   const target = await projectPath(folder, relative);
   if (!(await fs.stat(target)).isDirectory()) throw new Error('Drop files onto a project folder.');
-  const result = { copied: 0, existing: 0, skipped: 0 };
-  for (const source of sources) {
+  const result = { copied: 0, conflicts: [], skipped: 0, recovery: [] };
+  for (const [index, source] of sources.entries()) {
     if (typeof source !== 'string' || !path.isAbsolute(source) || /\0/.test(source)) {
       result.skipped++;
       continue;
@@ -67,15 +87,68 @@ async function importFiles(folder, relative, sources) {
     const name = path.basename(source);
     try {
       entryPath(name);
-      if (!(await fs.lstat(source)).isFile()) {
+      const sourceStat = await fs.lstat(source);
+      if (!sourceStat.isFile() && !sourceStat.isDirectory()) {
         result.skipped++;
         continue;
       }
-      await fs.copyFile(source, path.join(target, name), constants.COPYFILE_EXCL);
+      const directory = sourceStat.isDirectory();
+      const destination = path.join(target, name);
+      const original = await fs.realpath(source);
+      if (path.relative(original, destination) === '' || (directory && inside(original, target))) {
+        result.skipped++;
+        continue;
+      }
+      const existing = await fs.lstat(destination).catch(error => {
+        if (error.code !== 'ENOENT') throw error;
+        return null;
+      });
+      if (existing && !existing.isFile() && !existing.isDirectory()) {
+        result.skipped++;
+        continue;
+      }
+      if (existing && (!replacement || replacement.name !== name || replacement.revision !== importRevision(existing))) {
+        result.conflicts.push({ index, name, directory: existing.isDirectory(), revision: importRevision(existing) });
+        continue;
+      }
+      if (!directory && !existing) {
+        await copyImport(source, destination, false);
+      } else {
+        const staging = await fs.mkdtemp(path.join(target, '.perona-import-'));
+        const staged = path.join(staging, 'incoming');
+        const previous = path.join(staging, 'previous', name);
+        let backedUp = false;
+        try {
+          await copyImport(source, staged, directory);
+          if (existing) {
+            if (importRevision(await fs.lstat(destination)) !== replacement.revision) {
+              throw new Error('The destination changed before replacement.');
+            }
+            await fs.mkdir(path.dirname(previous));
+            await fs.rename(destination, previous);
+            backedUp = true;
+          }
+          try {
+            if (directory) await fs.rename(staged, destination);
+            else await fs.copyFile(staged, destination, constants.COPYFILE_EXCL);
+          } catch (error) {
+            if (backedUp && !(await fs.lstat(destination).catch(() => null))) {
+              await fs.rename(previous, destination);
+              backedUp = false;
+            }
+            throw error;
+          }
+          if (backedUp) {
+            await trash(previous).then(() => { backedUp = false; }).catch(() => {});
+          }
+        } finally {
+          if (backedUp) result.recovery.push(previous);
+          else await fs.rm(staging, { recursive: true, force: true });
+        }
+      }
       result.copied++;
     } catch (error) {
-      if (error.code === 'EEXIST') result.existing++;
-      else result.skipped++;
+      result.skipped++;
     }
   }
   return result;
