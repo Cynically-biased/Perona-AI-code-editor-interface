@@ -42,7 +42,7 @@ Drag tabs or a tab bar to another pane or to one of its edges to split the works
 | **Shift+Enter** or **Ctrl+Enter** | Insert a line break. |
 | **Ctrl+C** | Copy selected text. |
 | **Ctrl+V** | Paste text. |
-| **Mouse wheel** | Read earlier terminal output while keeping the live prompt available. Select **Jump back to present** to return to the live view. |
+| **Mouse wheel** | Read earlier terminal output while keeping the live prompt available. Scroll all the way down or select **Scroll to bottom** above the prompt to return to live output. |
 
 Use **Ctrl+S** to save an open file in the editor.
 

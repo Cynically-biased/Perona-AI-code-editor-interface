@@ -1,7 +1,8 @@
-function createTerminal({ cursorBlink = true } = {}) {
+function createTerminal({ cursorBlink = true, readOnly = false } = {}) {
   const terminal = new Terminal({
     cursorBlink, fontFamily: 'Cascadia Mono, Consolas, monospace',
     fontSize: 13, scrollback: 5000,
+    disableStdin: readOnly,
     theme: {
       background: '#1b121a', foreground: '#fff0e7', cursor: '#ff91c1',
       cursorAccent: '#1b121a', selectionBackground: '#f6aacb', selectionForeground: '#2a192b',
@@ -38,16 +39,21 @@ function terminalClipboard(event, terminal) {
 
 function configureChatInput(session) {
   const { body, terminal } = session;
-  const jump = body.closest('[data-panel="chat"]').querySelector('.jump-to-present');
-  const history = document.createElement('pre');
+  const jump = document.createElement('button');
+  jump.type = 'button';
+  jump.className = 'jump-to-present';
+  jump.textContent = '↓ Scroll to bottom';
+  jump.hidden = true;
+  const history = document.createElement('div');
   history.className = 'chat-scrollback';
   history.setAttribute('aria-label', 'Earlier terminal output');
-  history.tabIndex = 0;
   history.hidden = true;
-  body.append(history);
+  body.append(history, jump);
   let request = 0;
   let pendingScroll = 0;
   let redraw;
+  let viewer;
+  let browsing = false;
 
   function promptRow() {
     const buffer = terminal.buffer.active;
@@ -60,22 +66,22 @@ function configureChatInput(session) {
   }
 
   function layoutHistory() {
-    const screen = body.querySelector('.xterm-screen');
+    const screen = terminal.element?.querySelector('.xterm-screen');
     const height = screen?.getBoundingClientRect().height ?? 0;
-    history.style.height = Math.max(0, Math.min(terminal.rows - 2, promptRow())) * height / terminal.rows + 'px';
+    const boundary = Math.max(0, Math.min(terminal.rows - 2, promptRow())) * height / terminal.rows + 'px';
+    history.style.height = jump.style.top = boundary;
+    if (viewer) fitTerminal(history, viewer.fit);
   }
 
   function closeHistory() {
     request++;
+    browsing = false;
     history.hidden = jump.hidden = true;
     pendingScroll = 0;
   }
   jump.addEventListener('click', () => {
     closeHistory();
     terminal.focus();
-  });
-  history.addEventListener('keydown', event => {
-    if (event.key === 'Escape') jump.click();
   });
   session.onChatOutput = () => {
     clearTimeout(redraw);
@@ -94,31 +100,65 @@ function configureChatInput(session) {
     try {
       const output = await window.desk.chatScrollback(session.id, promptRow() - 1);
       if (current !== request) return;
-      history.textContent = output.trimEnd();
+      history.style.visibility = 'hidden';
+      history.hidden = false;
       layoutHistory();
-      history.hidden = jump.hidden = false;
-      history.scrollTop = history.scrollHeight - history.clientHeight + pendingScroll;
+      if (!viewer) {
+        viewer = createTerminal({ cursorBlink: false, readOnly: true });
+        viewer.terminal.open(history);
+        viewer.terminal.onScroll(() => {
+          if (browsing && viewer.terminal.buffer.active.viewportY >= viewer.terminal.buffer.active.baseY) closeHistory();
+        });
+      }
+      fitTerminal(history, viewer.fit);
+      viewer.terminal.reset();
+      // A capture is display data. Replay only text, line breaks and SGR color/style codes.
+      const printable = output.replace(/\x1b\[[0-9;:]*m|[\x00-\x1f\x7f-\x9f]/g,
+        token => token.startsWith('\x1b[') || token === '\n' ? token : '');
+      await new Promise(resolve => viewer.terminal.write(printable.trimEnd().replaceAll('\n', '\r\n') + '\x1b[0m\x1b[?25l', resolve));
+      if (current !== request) return;
+      viewer.terminal.scrollToBottom();
+      viewer.terminal.scrollLines(-Math.max(1, Math.ceil(-pendingScroll / 16)));
+      const buffer = viewer.terminal.buffer.active;
+      if (buffer.viewportY >= buffer.baseY) closeHistory();
+      else {
+        browsing = true;
+        history.style.visibility = '';
+        jump.hidden = false;
+      }
     } catch (error) {
-      if (current === request && session.running) setError(error);
+      if (current === request) {
+        closeHistory();
+        if (session.running) setError(error);
+      }
     } finally {
       if (current === request) pendingScroll = 0;
     }
   }
   const onWheel = event => {
-    if (!event.deltaY || history.contains(event.target)) return;
+    if (!event.deltaY) return;
     event.preventDefault();
     event.stopImmediatePropagation();
     const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? body.clientHeight : 1);
-    if (!history.hidden) {
-      history.scrollTop += delta;
+    if (browsing) {
+      viewer.terminal.scrollLines(Math.sign(delta) * Math.max(1, Math.ceil(Math.abs(delta) / 16)));
+      if (viewer.terminal.buffer.active.viewportY >= viewer.terminal.buffer.active.baseY) closeHistory();
     } else if (session.running && (pendingScroll || delta < 0)) {
       const opening = pendingScroll !== 0;
-      pendingScroll = Math.min(-1, pendingScroll + delta);
-      if (!opening) openHistory();
+      pendingScroll = Math.min(0, pendingScroll + delta);
+      if (!pendingScroll) closeHistory();
+      else if (!opening) openHistory();
     }
   };
   const onKeyDown = event => {
-    if (history.contains(event.target)) return;
+    if (history.contains(event.target)) {
+      if (event.key === 'Escape') jump.click();
+      else if (event.ctrlKey && !event.altKey && !event.metaKey && event.code === 'KeyC') {
+        event.stopImmediatePropagation();
+        terminalClipboard(event, viewer.terminal);
+      }
+      return;
+    }
     if (event.altKey || event.metaKey || event.isComposing) return;
     if (event.ctrlKey && ['KeyC', 'KeyV'].includes(event.code)) {
       event.stopImmediatePropagation();
@@ -135,6 +175,7 @@ function configureChatInput(session) {
   session.disposeChatInput = () => {
     clearTimeout(redraw);
     closeHistory();
+    viewer?.terminal.dispose();
     resize.dispose();
     session.body.removeEventListener('wheel', onWheel, true);
     session.body.removeEventListener('keydown', onKeyDown, true);

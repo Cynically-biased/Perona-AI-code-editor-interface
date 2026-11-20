@@ -318,7 +318,7 @@ register('update-chat-agent', (id, cols, rows, candidate) => {
 });
 register('chat-scrollback', async (id, end) => {
   if (!chats.has(id) || !Number.isInteger(end) || end < -1 || end > 999) return '';
-  const { stdout } = await run(tmux, tmuxArgs(id, 'capture-pane', '-p', '-J', '-S', '-2000', '-E', String(end), '-t', id),
+  const { stdout } = await run(tmux, tmuxArgs(id, 'capture-pane', '-p', '-e', '-J', '-S', '-2000', '-E', String(end), '-t', id),
     { windowsHide: true, timeout: 3000, maxBuffer: 4 * 1024 * 1024 });
   return stdout;
 });

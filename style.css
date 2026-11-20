@@ -261,12 +261,13 @@ dialog input {
   animation: none; outline: none; box-shadow: none; border-bottom: 0;
   color: inherit !important; background-color: transparent !important;
 }
-.jump-to-present { flex: none; white-space: nowrap; }
+.jump-to-present {
+  position: absolute; z-index: 3; left: 50%; transform: translate(-50%, calc(-100% - 5px));
+  background: var(--panel); border-color: var(--line); white-space: nowrap; font-size: 12px; padding: 4px 9px;
+}
 .chat-scrollback {
-  position: absolute; z-index: 2; inset: 0 0 auto; margin: 0; padding-right: 12px;
-  overflow: auto; overscroll-behavior: contain; white-space: pre-wrap; overflow-wrap: anywhere;
-  background: var(--terminal); color: var(--text); border-bottom: 1px solid var(--line);
-  font: 13px/1.2 "Cascadia Mono", Consolas, monospace;
+  position: absolute; z-index: 2; inset: 0 0 auto; overflow: hidden;
+  background: var(--terminal);
 }
 .project-view { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; }
 .view-state { margin: 12px; color: var(--muted); }
