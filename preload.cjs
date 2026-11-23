@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('desk', {
   addNewProject: (id, agent, name, preferred) => ipcRenderer.invoke('workspace-add-new-project', id, agent, name, preferred),
   pickSettingsFolder: preferred => ipcRenderer.invoke('settings-pick-folder', preferred),
   setInterfaceZoom: percent => ipcRenderer.invoke('settings-zoom', percent),
+  onInterfaceZoomStep: callback => ipcRenderer.on('settings-zoom-step', (_event, direction) => callback(direction)),
   addDroppedProject: (id, agent, name, file) =>
     ipcRenderer.invoke('workspace-add-dropped-project', id, agent, name, webUtils.getPathForFile(file)),
   importProjectFiles: (id, folder, files, replacement) =>

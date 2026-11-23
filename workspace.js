@@ -29,7 +29,7 @@ function configureWorkspace(session) {
       if (!dockModel.agentTabs.includes(element.dataset.view ?? element.dataset.panel)) element.remove();
     }
   } else {
-    root.querySelector('.file-refresh').addEventListener('click', () => loadFiles(session));
+    root.querySelector('.file-refresh').addEventListener('click', () => refreshFiles(session));
     root.querySelector('.changes-refresh').addEventListener('click', () => loadChanges(session));
     configureEditor(session);
     configureTools(session);

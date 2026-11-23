@@ -323,61 +323,86 @@
   </dialog>
   <dialog id="settings-dialog" aria-labelledby="settings-title">
     <form method="dialog">
-      <h2 id="settings-title">Settings</h2>
-      <label for="settings-terminal-font">Terminal font size</label>
-      <input id="settings-terminal-font" type="number" min="10" max="24" step="1" required>
-      <label class="settings-check"><input id="settings-pet-visible" type="checkbox"> Show Chibi Perona</label>
-      <label class="settings-check"><input id="settings-pet-roam" type="checkbox"> Let Chibi Perona roam</label>
-      <label class="settings-check"><input id="settings-usage-visible" type="checkbox"> Show agent usage in the sidebar</label>
-      <details>
-        <summary>Editor</summary>
-        <label>Font size <input id="settings-editor-font" type="number" min="10" max="40" required></label>
-        <label>Tab width <input id="settings-editor-tabs" type="number" min="1" max="8" required></label>
-        <label class="settings-check"><input id="settings-editor-wrap" type="checkbox"> Word wrap</label>
-        <label class="settings-check"><input id="settings-editor-minimap" type="checkbox"> Show minimap</label>
-      </details>
-      <details>
-        <summary>Startup and projects</summary>
-        <label>On startup <select id="settings-startup">
-          <option value="resume">Resume last project and agents</option>
-          <option value="manual">Show last project and start agents manually</option>
-          <option value="blank">Start with a blank workspace</option>
-        </select></label>
-        <label>Default agent <select id="settings-agent"><option value="codex">Codex</option><option value="claude">Claude</option></select></label>
-        <label for="settings-folder">Default project folder</label>
-        <input id="settings-folder" readonly placeholder="System default">
-        <button id="settings-pick-folder" type="button">Browse…</button>
-        <button id="settings-clear-folder" type="button">Use system default</button>
-      </details>
-      <details>
-        <summary>App updates and appearance</summary>
-        <label>On startup <select id="settings-updates">
-          <option value="download">Check and download updates</option>
-          <option value="check">Check only</option>
-          <option value="manual">Check manually</option>
-        </select></label>
-        <label>Interface zoom <select id="settings-zoom">
-          <option value="80">80%</option><option value="90">90%</option><option value="100">100%</option>
-          <option value="110">110%</option><option value="125">125%</option><option value="150">150%</option>
-        </select></label>
-      </details>
-      <details id="settings-keybindings">
-        <summary>Editor keyboard shortcuts</summary>
-        <label for="settings-command">Editor command</label>
-        <input id="settings-command-filter" type="search" aria-label="Filter editor commands" placeholder="Search commands">
-        <select id="settings-command"></select>
-        <p id="settings-shortcut-status" role="status"></p>
-        <div class="settings-shortcut-actions">
-          <button id="settings-record" type="button">Record shortcut</button>
-          <button id="settings-record-chord" type="button">Record two keys</button>
-          <button id="settings-unbind" type="button">Disable shortcut</button>
-          <button id="settings-reset-key" type="button">Restore default</button>
+      <header class="settings-header">
+        <h2 id="settings-title">Settings</h2>
+        <button class="settings-close" type="button" aria-label="Close settings">×</button>
+      </header>
+      <div class="settings-body">
+        <nav class="settings-nav" aria-label="Settings categories">
+          <button type="button" data-settings-category="appearance">Appearance</button>
+          <button type="button" data-settings-category="editor">Editor</button>
+          <button type="button" data-settings-category="terminal">Terminal</button>
+          <button type="button" data-settings-category="projects">Projects</button>
+          <button type="button" data-settings-category="keybindings">Shortcuts</button>
+          <button type="button" data-settings-category="updates">Updates</button>
+        </nav>
+        <div class="settings-content">
+          <section data-settings-panel="appearance" aria-labelledby="settings-appearance-heading">
+            <h3 id="settings-appearance-heading">Appearance</h3>
+            <label class="settings-row">
+              <span>Interface zoom <small>Use Ctrl+− or Ctrl++ to adjust the interface.</small></span>
+              <select id="settings-zoom">
+                <option value="80">80%</option><option value="90">90%</option><option value="100">100%</option>
+                <option value="110">110%</option><option value="125">125%</option><option value="150">150%</option>
+              </select>
+            </label>
+            <label class="settings-row">Show agent usage in the sidebar <input id="settings-usage-visible" type="checkbox"></label>
+            <label class="settings-row">Show Chibi Perona <input id="settings-pet-visible" type="checkbox"></label>
+            <label class="settings-row">
+              <span>Let Chibi Perona roam <small>When off, she stays in place and still reacts.</small></span>
+              <input id="settings-pet-roam" type="checkbox">
+            </label>
+          </section>
+          <section data-settings-panel="editor" aria-labelledby="settings-editor-heading" hidden>
+            <h3 id="settings-editor-heading">Editor</h3>
+            <label class="settings-row">Font size <input id="settings-editor-font" type="number" min="10" max="40" required></label>
+            <label class="settings-row">Tab width <input id="settings-editor-tabs" type="number" min="1" max="8" required></label>
+            <label class="settings-row">Word wrap <input id="settings-editor-wrap" type="checkbox"></label>
+            <label class="settings-row">Show minimap <input id="settings-editor-minimap" type="checkbox"></label>
+          </section>
+          <section data-settings-panel="terminal" aria-labelledby="settings-terminal-heading" hidden>
+            <h3 id="settings-terminal-heading">Terminal</h3>
+            <label class="settings-row">Font size <input id="settings-terminal-font" type="number" min="10" max="24" step="1" required></label>
+          </section>
+          <section data-settings-panel="projects" aria-labelledby="settings-projects-heading" hidden>
+            <h3 id="settings-projects-heading">Projects</h3>
+            <label class="settings-row">On startup <select id="settings-startup">
+              <option value="resume">Resume last project and agents</option>
+              <option value="manual">Resume project only</option>
+              <option value="blank">Start with a blank workspace</option>
+            </select></label>
+            <label class="settings-row">Default agent <select id="settings-agent">
+              <option value="codex">Codex</option><option value="claude">Claude</option>
+            </select></label>
+            <div class="settings-folder-row">
+              <label for="settings-folder">Default project folder</label>
+              <div class="settings-folder-controls">
+                <input id="settings-folder" readonly placeholder="System default">
+                <button id="settings-pick-folder" type="button">Browse…</button>
+                <button id="settings-clear-folder" type="button">Use system default</button>
+              </div>
+            </div>
+          </section>
+          <section data-settings-panel="keybindings" aria-labelledby="settings-shortcuts-heading" hidden>
+            <h3 id="settings-shortcuts-heading">Editor shortcuts</h3>
+            <p class="settings-help">Select a shortcut and press the key combination you want to use.</p>
+            <p id="settings-shortcut-status" role="status"></p>
+            <div id="settings-shortcut-list"></div>
+          </section>
+          <section data-settings-panel="updates" aria-labelledby="settings-updates-heading" hidden>
+            <h3 id="settings-updates-heading">Updates</h3>
+            <label class="settings-row">On startup <select id="settings-updates">
+              <option value="download">Check and download updates</option>
+              <option value="check">Check only</option>
+              <option value="manual">Check manually</option>
+            </select></label>
+          </section>
         </div>
-      </details>
-      <div class="dialog-actions">
-        <button value="cancel" formnovalidate>Cancel</button>
-        <button value="save">Save settings</button>
       </div>
+      <footer class="dialog-actions settings-footer">
+        <button class="settings-cancel" type="button">Cancel</button>
+        <button value="save">Save settings</button>
+      </footer>
     </form>
   </dialog>
   <dialog id="app-version-dialog" aria-labelledby="app-version-heading">

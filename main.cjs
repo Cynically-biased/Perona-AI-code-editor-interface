@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, screen, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
 const { execFile, execFileSync } = require('node:child_process');
 const { existsSync, readdirSync, statSync } = require('node:fs');
 const path = require('node:path');
@@ -630,29 +630,13 @@ register('xampp-config', (id, relative) => previewFile(xampp.root, xamppConfig(i
 register('xampp-config-save', (id, relative, revision, text) =>
   trackFileWork(saveFile(xampp.root, xamppConfig(id, relative), revision, text)));
 
-function handleWindowResizeShortcut(event, input) {
+function handleInterfaceZoomShortcut(event, input) {
   if (input.type !== 'keyDown' || !input.control || input.alt || input.meta || input.isComposing) return;
   const grow = ['Equal', 'NumpadAdd'].includes(input.code);
   const shrink = ['Minus', 'NumpadSubtract'].includes(input.code);
   if (!grow && !shrink) return;
   event.preventDefault();
-  if (input.isAutoRepeat || window.isFullScreen() || (grow && window.isMaximized())) return;
-
-  const bounds = window.getBounds();
-  const area = screen.getDisplayMatching(bounds).workArea;
-  const [minWidth, minHeight] = window.getMinimumSize();
-  const factor = grow ? 1.1 : 1 / 1.1;
-  const width = Math.min(area.width, Math.max(minWidth, Math.round(bounds.width * factor)));
-  const height = Math.min(area.height, Math.max(minHeight, Math.round(bounds.height * factor)));
-  const x = Math.max(area.x, Math.min(area.x + area.width - width, bounds.x + Math.round((bounds.width - width) / 2)));
-  const y = Math.max(area.y, Math.min(area.y + area.height - height, bounds.y + Math.round((bounds.height - height) / 2)));
-  const resize = () => window.setBounds({ x, y, width, height });
-  if (window.isMaximized()) {
-    window.once('unmaximize', resize);
-    window.unmaximize();
-  } else {
-    resize();
-  }
+  if (!input.isAutoRepeat) send('settings-zoom-step', grow ? 1 : -1);
 }
 
 register('window-control', action => {
@@ -687,9 +671,9 @@ else app.whenReady().then(() => {
     backgroundColor: '#21141d', autoHideMenuBar: true,
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), sandbox: true, webviewTag: true }
   });
-  window.webContents.on('before-input-event', handleWindowResizeShortcut);
+  window.webContents.on('before-input-event', handleInterfaceZoomShortcut);
   window.webContents.on('did-attach-webview', (_event, guest) => {
-    guest.on('before-input-event', handleWindowResizeShortcut);
+    guest.on('before-input-event', handleInterfaceZoomShortcut);
   });
   preview = createPreview(window, (owner, update) => send('preview-update', owner, update));
   window.on('maximize', () => send('window-maximized', true));

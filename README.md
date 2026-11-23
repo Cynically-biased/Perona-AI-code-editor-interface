@@ -50,7 +50,7 @@ Drag tabs or a tab bar to another pane or to one of its edges to split the works
 
 Use **Ctrl+S** to save an open file in the editor.
 
-Use **Ctrl+−** or **Ctrl++** to resize the Perona window. **Ctrl+=** also makes it bigger.
+Use **Ctrl+−** to zoom out or **Ctrl++** (also **Ctrl+=**) to zoom in inside the Perona window. You can also choose a zoom level in **Settings → Appearance**.
 
 In **Git → Remove from Git**, choose a tracked path to stage its removal while keeping its local copy. Commit and push to remove it from the current remote branch. Add the path to `.gitignore` if it should stay untracked.
 

@@ -47,7 +47,7 @@ function configureEditor(session) {
   list.addEventListener('contextmenu', event => showContextMenu(event, [
     ['New file', () => openFileAction(session, 'file')],
     ['New folder', () => openFileAction(session, 'directory')],
-    ['Refresh', () => loadFiles(session)]
+    ['Refresh', () => refreshFiles(session)]
   ], root.querySelector('.file-refresh')));
   view.files = new Map();
   view.expandedFolders = new Set();
@@ -73,10 +73,11 @@ function updateEditor(view, status = '') {
   view.fileSave.disabled = !unsaved || file.conflict || view.fileBusy;
   view.editor?.updateOptions({ readOnly: Boolean(view.fileBusy) });
   view.filesPanel.querySelector('.file-reload').disabled = Boolean(view.fileBusy);
+  view.filesPanel.querySelector('.file-refresh').disabled = Boolean(view.fileBusy);
   const message = view.filesPanel.querySelector('.editor-status');
   const position = view.editor?.getPosition();
   const caret = file?.model && position ? 'Ln ' + position.lineNumber + ', Col ' + position.column : '';
-  const detail = status || (file?.conflict ? 'Changed on disk. Copy your edits before reloading.'
+  const detail = status || file?.refreshError || (file?.conflict ? 'Changed on disk. Copy your edits before reloading.'
     : unsaved ? (file.mixedEndings ? 'Unsaved · mixed line endings will normalize' : 'Unsaved')
     : file?.model ? 'Ctrl+S to save' : '');
   message.textContent = [detail, caret].filter(Boolean).join('  ·  ');
@@ -89,7 +90,9 @@ function updateEditor(view, status = '') {
 
 function showEditorFile(session, file) {
   const { view } = session;
-  if (view.file?.model) view.file.position = view.editor.saveViewState();
+  if (view.file?.model && view.editor.getModel() === view.file.model) {
+    view.file.position = view.editor.saveViewState();
+  }
   view.file = file;
   const root = view.filesPanel;
   const heading = root.querySelector('.preview-heading');
@@ -166,7 +169,8 @@ function renderFileTabs(session) {
     ], open));
     close.addEventListener('click', async () => {
       if (view.fileBusy || (dirty(file) && !await confirmAction(
-        'Close file?', 'Unsaved edits to ' + file.relative + ' will be lost.', 'Discard and close'))) return;
+        'Close file?', 'Unsaved edits to ' + file.relative + ' will be lost.', 'Discard and close'))
+        || view.fileBusy || view.files.get(file.relative) !== file) return;
       view.files.delete(file.relative);
       if (file === view.file) showEditorFile(session, [...view.files.values()].at(-1));
       else renderFileTabs(session);
@@ -188,44 +192,91 @@ async function loadPreview(session, relative, reload = false) {
   }
   if (dirty(cached) && !await confirmAction(
     'Reload file?', 'Unsaved edits to ' + relative + ' will be lost.', 'Discard and reload')) return;
+  if (view.fileBusy || view.editorDisposed || view.files.get(relative) !== cached) return;
   view.fileBusy = true;
   updateEditor(view, 'Opening file…');
   let issue;
   try {
     const result = await window.desk.preview(session.id, relative);
-    const text = (result.text ?? '').replace(/\r\n|\r/g, '\n');
-    const file = { relative, revision: result.revision, text, mixedEndings: result.mixedEndings,
-      truncated: result.truncated, preview: result.binary ? 'This file needs a binary or encoding-specific editor.' : result.text };
-    if (result.revision) {
-      await monacoReady();
-      if (!view.editor) {
-        view.editor = monaco.editor.create(view.fileEditor, {
-          model: null, theme: 'perona', automaticLayout: true,
-          scrollBeyondLastLine: false, lineNumbers: 'on', ...editorDisplayOptions()
-        });
-        view.editor.onDidChangeModelContent(() => {
-          updateEditor(view);
-          if (dirty(view.file)) reportPetActivity('edit', view.fileEditor);
-        });
-        view.editor.onDidChangeCursorPosition(() => updateEditor(view));
-      }
-      const uri = monaco.Uri.from({ scheme: 'perona-file', authority: session.id, path: '/' + relative });
-      if (cached?.model) {
-        cached.model.setValue(text);
-        file.model = cached.model;
-      } else {
-        file.model = monaco.editor.createModel(text, undefined, uri);
-      }
-      file.model.updateOptions({ tabSize: appPreferences.tabWidth, indentSize: 'tabSize' });
-    }
-    view.files.set(relative, file);
-    showEditorFile(session, file);
-    if (cached?.model && !file.model) cached.model.dispose();
+    const file = await cacheFilePreview(session, relative, result);
+    if (file) showEditorFile(session, file);
   } catch (error) {
     issue = readableError(error);
   } finally {
     view.fileBusy = false;
-    updateEditor(view, issue);
+    if (!view.editorDisposed) updateEditor(view, issue);
+  }
+}
+
+async function cacheFilePreview(session, relative, result) {
+  const { view } = session;
+  const cached = view.files.get(relative);
+  if (view.editorDisposed) return;
+  const text = (result.text ?? '').replace(/\r\n|\r/g, '\n');
+  const position = cached?.model && cached === view.file ? view.editor.saveViewState() : cached?.position;
+  const file = { relative, revision: result.revision, text, mixedEndings: result.mixedEndings,
+    truncated: result.truncated, position,
+    preview: result.binary ? 'This file needs a binary or encoding-specific editor.' : result.text };
+  if (result.revision) {
+    await monacoReady();
+    if (view.editorDisposed) return;
+    if (!view.editor) {
+      view.editor = monaco.editor.create(view.fileEditor, {
+        model: null, theme: 'perona', automaticLayout: true,
+        scrollBeyondLastLine: false, lineNumbers: 'on', ...editorDisplayOptions()
+      });
+      view.editor.onDidChangeModelContent(() => {
+        updateEditor(view);
+        if (!view.fileBusy && dirty(view.file)) reportPetActivity('edit', view.fileEditor);
+      });
+      view.editor.onDidChangeCursorPosition(() => updateEditor(view));
+    }
+    const uri = monaco.Uri.from({ scheme: 'perona-file', authority: session.id, path: '/' + relative });
+    file.model = cached?.model ?? monaco.editor.createModel(text, undefined, uri);
+    if (file.model.getValue() !== text) file.model.setValue(text);
+    file.model.updateOptions({ tabSize: appPreferences.tabWidth, indentSize: 'tabSize' });
+  }
+  view.files.set(relative, file);
+  if (cached?.model && !file.model) {
+    if (cached === view.file) view.editor.setModel(null);
+    cached.model.dispose();
+  }
+  return file;
+}
+
+async function refreshFiles(session) {
+  const { view } = session;
+  if (view.fileBusy) return;
+  view.fileBusy = true;
+  updateEditor(view, 'Refreshing files…');
+  try {
+    await loadFiles(session);
+    const active = view.file;
+    let refreshedActive;
+    for (const [relative, file] of view.files) {
+      if (view.editorDisposed) return;
+      try {
+        const result = await window.desk.preview(session.id, relative);
+        if (view.editorDisposed) return;
+        if (dirty(file)) {
+          file.conflict = file.revision !== result.revision;
+          file.refreshError = undefined;
+        } else {
+          const refreshed = await cacheFilePreview(session, relative, result);
+          if (refreshed && file === active) refreshedActive = refreshed;
+        }
+      } catch (error) {
+        if (view.editorDisposed) return;
+        file.conflict = true;
+        file.refreshError = 'Could not refresh ' + relative + ': ' + readableError(error);
+      }
+    }
+    if (view.editorDisposed) return;
+    if (refreshedActive) showEditorFile(session, refreshedActive);
+    else renderFileTabs(session);
+  } finally {
+    view.fileBusy = false;
+    if (!view.editorDisposed) updateEditor(view);
   }
 }
 
@@ -459,6 +510,7 @@ fileDialog.addEventListener('close', async () => {
 });
 
 function disposeEditor(view) {
+  view.editorDisposed = true;
   view.editor?.dispose();
   for (const file of view.files.values()) file.model?.dispose();
 }

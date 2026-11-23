@@ -20,11 +20,27 @@ let shortcutOverrides;
 let shortcutRecorder;
 let shortcutDraft = {};
 let recording;
-const commandChoice = settingsInput('command');
-const commandFilter = settingsInput('command-filter');
 const shortcutStatus = settingsInput('shortcut-status');
-const recordShortcut = settingsInput('record');
-const recordChord = settingsInput('record-chord');
+const shortcutList = settingsInput('shortcut-list');
+const settingsCategories = [...settingsDialog.querySelectorAll('[data-settings-category]')];
+const settingsPanels = [...settingsDialog.querySelectorAll('[data-settings-panel]')];
+const editorShortcutRows = [
+  ['perona.save', 'Save file', 'Write your changes to the project file.'],
+  ['undo', 'Undo', 'Reverse the last edit.'],
+  ['redo', 'Redo', 'Restore an edit you undid.'],
+  ['actions.find', 'Find', 'Search the current file.'],
+  ['editor.action.startFindReplaceAction', 'Find and replace', 'Find text and replace it in the current file.'],
+  ['editor.action.commentLine', 'Toggle line comment', 'Comment or uncomment the selected lines.'],
+  ['editor.action.formatDocument', 'Format document', 'Format the file when its language supports formatting.']
+];
+
+function showSettingsCategory(category) {
+  for (const button of settingsCategories) {
+    button.setAttribute('aria-pressed', String(button.dataset.settingsCategory === category));
+  }
+  for (const panel of settingsPanels) panel.hidden = panel.dataset.settingsPanel !== category;
+  settingsDialog.querySelector('.settings-content').scrollTop = 0;
+}
 
 function encodeEditorChord(chord) {
   return chord.keyCode | (chord.ctrlKey ? monaco.KeyMod.CtrlCmd : 0) |
@@ -75,33 +91,81 @@ function applyEditorShortcuts() {
   shortcutOverrides = monaco.editor.addKeybindingRules(rules);
 }
 
-function commandLabel(command) {
-  return command === 'perona.save' ? 'Save file' : command;
-}
-
-function updateShortcutStatus() {
-  const command = commandChoice.value;
-  const available = shortcutCatalog.has(command);
-  for (const id of ['record', 'record-chord', 'unbind', 'reset-key']) settingsInput(id).disabled = !available;
-  if (!available) {
-    shortcutStatus.textContent = 'No matching commands.';
-    return;
+function currentShortcut(command) {
+  if (Object.hasOwn(shortcutDraft, command)) {
+    return shortcutDraft[command] ? shortcutLabel(shortcutDraft[command]) : 'Disabled';
   }
-  const defaults = [...new Set(shortcutCatalog.get(command).map(binding => binding.label))].join(', ');
-  const changed = Object.hasOwn(shortcutDraft, command);
-  shortcutStatus.textContent = changed
-    ? 'Current: ' + (shortcutDraft[command] ? shortcutLabel(shortcutDraft[command]) : 'Disabled') + ' · Default: ' + defaults
-    : 'Default: ' + defaults;
+  return [...new Set(shortcutCatalog.get(command)?.map(binding => binding.label))].join(' / ');
 }
 
-function listShortcutCommands() {
-  const current = commandChoice.value;
-  const search = commandFilter.value.trim().toLowerCase();
-  const commands = [...shortcutCatalog.keys()].sort((a, b) => commandLabel(a).localeCompare(commandLabel(b)))
-    .filter(command => commandLabel(command).toLowerCase().includes(search));
-  commandChoice.replaceChildren(...commands.map(command => new Option(commandLabel(command), command)));
-  if (commands.includes(current)) commandChoice.value = current;
-  updateShortcutStatus();
+function renderShortcutRows() {
+  shortcutList.replaceChildren();
+  for (const [command, label, description] of editorShortcutRows) {
+    if (!shortcutCatalog.has(command)) continue;
+    const row = node('div', '', 'settings-row settings-shortcut-row');
+    const detail = node('span', label);
+    detail.append(node('small', description));
+    const actions = node('div', '', 'settings-shortcut-controls');
+    const record = node('button', currentShortcut(command), 'settings-key');
+    record.type = 'button';
+    const reset = node('button', 'Reset', 'settings-key-reset');
+    reset.type = 'button';
+    reset.setAttribute('aria-label', 'Reset shortcut for ' + label);
+    const update = () => {
+      record.textContent = currentShortcut(command);
+      record.setAttribute('aria-label', label + ': ' + record.textContent + '. Change shortcut');
+      reset.disabled = !Object.hasOwn(shortcutDraft, command);
+    };
+    record.addEventListener('click', () => {
+      recording = record;
+      record.textContent = 'Press keys…';
+      shortcutStatus.textContent = 'Recording ' + label + '. Press Escape to cancel.';
+    });
+    record.addEventListener('blur', () => {
+      if (recording !== record) return;
+      recording = undefined;
+      shortcutStatus.textContent = '';
+      update();
+    });
+    record.addEventListener('keydown', event => {
+      if (recording !== record || event.key === 'Tab') return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.key === 'Escape') {
+        recording = undefined;
+        shortcutStatus.textContent = '';
+        update();
+        return;
+      }
+      if (['Control', 'Shift', 'Alt', 'Meta'].includes(event.key) || event.repeat || event.isComposing) return;
+      const chord = new shortcutRecorder(event).toKeyCodeChord();
+      if (!chord.keyCode || (!chord.ctrlKey && !chord.altKey && !chord.metaKey && !/^F\d+$/.test(event.key))) {
+        shortcutStatus.textContent = 'Use Ctrl, Alt, or Win with another key, or press a function key.';
+        return;
+      }
+      const key = encodeEditorChord(chord);
+      const conflict = editorShortcutRows.find(([other]) => other !== command
+        && currentShortcut(other).split(' / ').includes(shortcutLabel(key)));
+      if (conflict) {
+        shortcutStatus.textContent = 'That shortcut is already used by ' + conflict[1] + '.';
+        return;
+      }
+      shortcutDraft[command] = key;
+      recording = undefined;
+      shortcutStatus.textContent = label + ' set to ' + shortcutLabel(key) + '.';
+      update();
+    });
+    reset.addEventListener('click', () => {
+      delete shortcutDraft[command];
+      update();
+      record.focus();
+      shortcutStatus.textContent = label + ' restored to its default.';
+    });
+    update();
+    actions.append(record, reset);
+    row.append(detail, actions);
+    shortcutList.append(row);
+  }
 }
 
 function applySettingsDisplay() {
@@ -122,8 +186,7 @@ document.getElementById('open-settings').addEventListener('click', () => {
   settingsInput('editor-wrap').checked = appPreferences.wrap;
   settingsInput('editor-minimap').checked = appPreferences.minimap;
   shortcutDraft = { ...appPreferences.shortcuts };
-  commandFilter.value = '';
-  listShortcutCommands();
+  showSettingsCategory('appearance');
   settingsDialog.returnValue = '';
   settingsDialog.showModal();
   syncPreview();
@@ -137,64 +200,45 @@ settingsInput('pick-folder').addEventListener('click', async () => {
 });
 settingsInput('clear-folder').addEventListener('click', () => { settingsInput('folder').value = ''; });
 
-settingsInput('keybindings').addEventListener('toggle', async event => {
-  if (!event.currentTarget.open || shortcutRecorder) return;
-  shortcutStatus.textContent = 'Loading editor commands…';
-  try {
-    await monacoReady();
-    listShortcutCommands();
-  } catch (error) { shortcutStatus.textContent = readableError(error); }
-});
-commandFilter.addEventListener('input', listShortcutCommands);
-commandChoice.addEventListener('change', updateShortcutStatus);
-for (const [id, disable] of [['unbind', true], ['reset-key', false]]) {
-  settingsInput(id).addEventListener('click', () => {
-    if (disable) shortcutDraft[commandChoice.value] = null;
-    else delete shortcutDraft[commandChoice.value];
-    updateShortcutStatus();
+for (const button of settingsCategories) {
+  button.addEventListener('click', async () => {
+    const category = button.dataset.settingsCategory;
+    showSettingsCategory(category);
+    if (category !== 'keybindings') return;
+    shortcutStatus.textContent = shortcutRecorder ? '' : 'Loading shortcuts…';
+    try {
+      await monacoReady();
+      if (!settingsDialog.open) return;
+      shortcutStatus.textContent = '';
+      renderShortcutRows();
+    } catch (error) { shortcutStatus.textContent = readableError(error); }
   });
-}
-function captureShortcut(event) {
-  if (!recording) return;
-  if (event.key === 'Tab') return;
-  event.preventDefault();
-  event.stopPropagation();
-  if (event.key === 'Escape') {
-    recording = undefined;
-    updateShortcutStatus();
-    return;
-  }
-  if (['Control', 'Shift', 'Alt', 'Meta'].includes(event.key)) return;
-  const chord = new shortcutRecorder(event).toKeyCodeChord();
-  if (!chord.keyCode || (!recording.first && event.key.length === 1 && !chord.ctrlKey && !chord.altKey && !chord.metaKey)) {
-    shortcutStatus.textContent = 'Use a modifier with a printable key, or press a function key.';
-    return;
-  }
-  const key = encodeEditorChord(chord);
-  if (recording.twoKeys && !recording.first) {
-    recording.first = key;
-    shortcutStatus.textContent = shortcutLabel(key) + ' … Press the second shortcut.';
-    return;
-  }
-  shortcutDraft[commandChoice.value] = recording.first ? monaco.KeyMod.chord(recording.first, key) : key;
-  recording = undefined;
-  updateShortcutStatus();
 }
 
-for (const button of [recordShortcut, recordChord]) {
-  button.addEventListener('click', () => {
-    recording = { twoKeys: button === recordChord };
-    button.focus();
-    shortcutStatus.textContent = 'Press the shortcut you want to use. Press Escape to cancel.';
-  });
-  button.addEventListener('blur', () => {
-    if (recording) {
-      recording = undefined;
-      updateShortcutStatus();
-    }
-  });
-  button.addEventListener('keydown', captureShortcut);
+for (const button of settingsDialog.querySelectorAll('.settings-cancel, .settings-close')) {
+  button.addEventListener('click', () => settingsDialog.close('cancel'));
 }
+
+settingsDialog.addEventListener('invalid', event => {
+  if (event.target !== settingsDialog.querySelector('form').querySelector(':invalid')) return;
+  const panel = event.target.closest('[data-settings-panel]');
+  if (panel?.hidden) showSettingsCategory(panel.dataset.settingsPanel);
+}, true);
+
+const zoomLevels = [...settingsInput('zoom').options].map(option => Number(option.value));
+window.desk.onInterfaceZoomStep(direction => {
+  if (recording) {
+    shortcutStatus.textContent = 'Ctrl+− and Ctrl++ are reserved for interface zoom.';
+    return;
+  }
+  const index = zoomLevels.indexOf(zoomLevels.includes(appPreferences.zoom) ? appPreferences.zoom : 100);
+  const zoom = zoomLevels[Math.max(0, Math.min(zoomLevels.length - 1, index + direction))];
+  if (zoom === appPreferences.zoom) return;
+  appPreferences.zoom = zoom;
+  settingsInput('zoom').value = zoom;
+  localStorage.setItem('perona-settings', JSON.stringify(appPreferences));
+  window.desk.setInterfaceZoom(zoom).catch(setError);
+});
 
 settingsDialog.addEventListener('close', () => {
   recording = undefined;
