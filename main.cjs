@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, screen, shell } = require('electron');
 const { execFile, execFileSync } = require('node:child_process');
 const { existsSync, readdirSync, statSync } = require('node:fs');
 const path = require('node:path');
@@ -14,7 +14,7 @@ const xampp = require('./xampp.cjs');
 const { registerInterface } = require('./app-protocol.cjs');
 const { createHistory, resumeThread } = require('./history.cjs');
 const { openWorkspace } = require('./saved-workspace.cjs');
-const { gitStatus, gitAction, trackedGitPaths } = require('./project-git.cjs');
+const { gitStatus, gitAction, trackedGitPaths, cloneRepository } = require('./project-git.cjs');
 const { listFolder, previewFile, saveFile, createEntry, importFiles, moveEntry, removeEntry, projectChanges } = require('./project-files.cjs');
 
 app.setName('Perona');
@@ -89,7 +89,33 @@ function literal(value) {
   return "'" + value.replaceAll("'", "''") + "'";
 }
 
-register('default-folder', () => defaultFolder);
+async function preferredProjectFolder(preferred) {
+  if (typeof preferred !== 'string' || !path.isAbsolute(preferred)) return defaultFolder;
+  const resolved = await realpath(preferred).catch(() => null);
+  return resolved && (await stat(resolved).catch(() => null))?.isDirectory() ? resolved : defaultFolder;
+}
+
+register('workspace-add-new-project', async (id, agent, name, preferred) => {
+  const folder = await preferredProjectFolder(preferred);
+  workspace.add(id, agent, name, id, folder);
+  return folder;
+});
+register('settings-pick-folder', async preferred => {
+  if (pickerOpen) return null;
+  pickerOpen = true;
+  try {
+    const { canceled, filePaths: [folder] } = await dialog.showOpenDialog(window, {
+      title: 'Choose the default project folder', defaultPath: await preferredProjectFolder(preferred),
+      properties: ['openDirectory', 'createDirectory']
+    });
+    return canceled ? null : folder;
+  } finally {
+    pickerOpen = false;
+  }
+});
+register('settings-zoom', percent => {
+  if ([80, 90, 100, 110, 125, 150].includes(percent)) window.webContents.setZoomFactor(percent / 100);
+});
 register('workspace-load', () => workspace.read());
 register('workspace-add-dropped-project', async (id, agent, name, source) => {
   if (typeof source !== 'string' || !path.isAbsolute(source)) throw new Error('Drop a project folder from File Explorer.');
@@ -107,7 +133,7 @@ register('workspace-select', (...args) => workspace.select(...args));
 register('workspace-rename', (chat, name) => workspace.rename(chat, name));
 register('workspace-remove', chat => workspace.remove(chat));
 register('app-update-status', () => appUpdates.status());
-register('app-update-check', () => appUpdates.check());
+register('app-update-check', download => appUpdates.check(download !== false));
 register('app-update-versions', () => appUpdates.earlierVersions());
 register('app-update-downgrade', version => appUpdates.downgrade(version));
 register('app-update-install', () => {
@@ -370,11 +396,17 @@ function closeProjectShell(id) {
   terminal.kill();
 }
 
-function findProjectFish() {
+function gitSdkFolder() {
+  return path.join(process.env.LOCALAPPDATA || app.getPath('userData'), 'PeronaGitSDK');
+}
+
+function gitBashRoots() {
+  const drive = process.env.SystemDrive || 'C:';
   const roots = [
     process.env.ProgramFiles && path.join(process.env.ProgramFiles, 'Git'),
     process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'Programs', 'Git'),
-    process.env['ProgramFiles(x86)'] && path.join(process.env['ProgramFiles(x86)'], 'Git')
+    process.env['ProgramFiles(x86)'] && path.join(process.env['ProgramFiles(x86)'], 'Git'),
+    gitSdkFolder(), path.join(drive + '\\', 'git-sdk-64')
   ];
   try {
     const executable = findExecutable('git');
@@ -383,7 +415,11 @@ function findProjectFish() {
   } catch {
     // A standard Git for Windows installation may be available outside PATH.
   }
-  for (const root of roots.filter(Boolean)) {
+  return roots.filter(Boolean);
+}
+
+function findProjectFish() {
+  for (const root of gitBashRoots()) {
     const bash = path.join(root, 'bin', 'bash.exe');
     if (existsSync(bash) && existsSync(path.join(root, 'usr', 'bin', 'fish.exe'))) {
       return { bash, msystem: 'MINGW64' };
@@ -392,6 +428,13 @@ function findProjectFish() {
   const msys = findMsys2();
   if (msys && existsSync(path.join(path.dirname(msys), 'fish.exe'))) {
     return { bash: msys, msystem: 'MSYS' };
+  }
+}
+
+function findGitBashInstaller() {
+  for (const root of gitBashRoots()) {
+    const bash = path.join(root, 'bin', 'bash.exe');
+    if (existsSync(bash) && existsSync(path.join(root, 'usr', 'bin', 'pacman.exe'))) return bash;
   }
 }
 
@@ -408,38 +451,57 @@ function findMsys2() {
 let fishInstallation;
 register('project-shell-install-fish', () => {
   if (fishInstallation) return fishInstallation;
-  if (findProjectFish()) return;
   fishInstallation = (async () => {
     const cwd = app.getPath('userData');
     const options = { cwd, windowsHide: true, timeout: 10 * 60 * 1000 };
-    let bash = findMsys2();
+    let bash = findGitBashInstaller();
     const fresh = !bash;
     if (!bash) {
       try {
-        await run('winget.exe', ['install', '--id', 'MSYS2.MSYS2', '--exact', '--source', 'winget',
+        await run('winget.exe', ['install', '--id', 'Git.SDK', '--exact', '--source', 'winget', '--architecture', 'x64',
+          '--location', gitSdkFolder(),
           '--silent', '--disable-interactivity', '--accept-package-agreements', '--accept-source-agreements'], options);
       } catch (error) {
         throw new Error(error.code === 'ENOENT'
           ? 'Windows Package Manager is required. Install App Installer from Microsoft Store and try again.'
-          : 'MSYS2 installation failed. Check Windows Package Manager and try again.');
+          : 'Git for Windows SDK installation failed. Check Windows Package Manager and try again.');
       }
-      bash = findMsys2();
+      bash = findGitBashInstaller();
     }
-    if (!bash) throw new Error('Perona could not find the MSYS2 installation.');
+    if (!bash) throw new Error('Perona could not find Git Bash with its package manager.');
     try {
-      const pacman = args => run(bash, ['--login', '-c', 'exec /usr/bin/pacman "$@"', 'perona', ...args], {
-        ...options, env: { ...process.env, MSYSTEM: 'MSYS', CHERE_INVOKING: '1' }
-      });
+      const gitBashOptions = {
+        ...options, env: { ...process.env, MSYSTEM: 'MINGW64', CHERE_INVOKING: '1' }
+      };
+      const pacman = args => run(bash, ['--login', '-c', 'exec /usr/bin/pacman "$@"', 'perona', ...args], gitBashOptions);
       if (fresh) {
-        // Core upgrades may end the first MSYS2 process. Finish in a fresh shell.
+        // A runtime upgrade can end the first shell. Finish in a fresh one.
         await pacman(['-Syu', '--noconfirm']);
         await pacman(['-Syu', '--noconfirm']);
       }
-      await pacman(['-S', '--needed', '--noconfirm', 'fish']);
+      await pacman(['-S', '--needed', '--noconfirm', 'fish', 'fisher', 'mingw-w64-ucrt-x86_64-zoxide']);
+      await run(bash, ['--login', '-c', [
+        'set -e',
+        'config=$(/usr/bin/fish --no-config -c \'printf "%s" $__fish_config_dir\')',
+        'test -n "$config"',
+        'mkdir -p -- "$config/conf.d"',
+        'file="$config/conf.d/perona-zoxide.fish"',
+        'if [ ! -e "$file" ]; then',
+        '  (set -o noclobber; cat > "$file" <<\'FISH\'',
+        'if test -x /ucrt64/bin/zoxide.exe',
+        '    if not type -q zoxide',
+        '        fish_add_path --append --path /ucrt64/bin',
+        '    end',
+        '    zoxide init fish | source',
+        'end',
+        'FISH',
+        '  )',
+        'fi'
+      ].join('\n')], gitBashOptions);
     } catch {
-      throw new Error('Fish installation failed. Check your connection and whether MSYS2 needs an update, then try again.');
+      throw new Error('Could not set up Fish, Fisher, and zoxide in Git Bash. Check your connection and Git SDK permissions, then try again.');
     }
-    if (!findProjectFish()) throw new Error('The fish installer finished, but Perona could not find fish.');
+    if (findProjectFish()?.msystem !== 'MINGW64') throw new Error('The installer finished, but Perona could not find Fish in Git Bash.');
   })().finally(() => { fishInstallation = undefined; });
   return fishInstallation;
 });
@@ -508,6 +570,30 @@ register('project-remove', (id, relative, directory) =>
   trackFileWork(removeEntry(projectFor(id).cwd, relative, directory, target => shell.trashItem(target))));
 register('project-changes', id => projectChanges(projectFor(id).cwd));
 register('git-status', id => gitStatus(projectFor(id).cwd));
+register('git-clone', async (id, agent, name, url, preferred) => {
+  if (typeof id !== 'string' || !/^[a-f0-9-]{36}$/.test(id) || !['codex', 'claude'].includes(agent)) {
+    throw new Error('Choose an agent for the new project.');
+  }
+  if (pickerOpen) throw new Error('Close the current folder picker and try again.');
+  pickerOpen = true;
+  try {
+    const { canceled, filePaths: [selected] } = await dialog.showOpenDialog(window, {
+      title: 'Choose an empty folder for the clone',
+      defaultPath: await preferredProjectFolder(preferred),
+      buttonLabel: 'Clone here',
+      properties: ['openDirectory', 'createDirectory']
+    });
+    if (canceled || !selected) return null;
+    const folder = await realpath(selected);
+    return await trackFileWork((async () => {
+      await cloneRepository(folder, url);
+      workspace.add(id, agent, name, id, folder);
+      return folder;
+    })());
+  } finally {
+    pickerOpen = false;
+  }
+});
 register('git-tracked-paths', id => trackedGitPaths(projectFor(id).cwd));
 register('git-action', (id, action, data) => trackFileWork(gitAction(projectFor(id).cwd, action, data)));
 register('git-create-page', provider => {
@@ -544,6 +630,31 @@ register('xampp-config', (id, relative) => previewFile(xampp.root, xamppConfig(i
 register('xampp-config-save', (id, relative, revision, text) =>
   trackFileWork(saveFile(xampp.root, xamppConfig(id, relative), revision, text)));
 
+function handleWindowResizeShortcut(event, input) {
+  if (input.type !== 'keyDown' || !input.control || input.alt || input.meta || input.isComposing) return;
+  const grow = ['Equal', 'NumpadAdd'].includes(input.code);
+  const shrink = ['Minus', 'NumpadSubtract'].includes(input.code);
+  if (!grow && !shrink) return;
+  event.preventDefault();
+  if (input.isAutoRepeat || window.isFullScreen() || (grow && window.isMaximized())) return;
+
+  const bounds = window.getBounds();
+  const area = screen.getDisplayMatching(bounds).workArea;
+  const [minWidth, minHeight] = window.getMinimumSize();
+  const factor = grow ? 1.1 : 1 / 1.1;
+  const width = Math.min(area.width, Math.max(minWidth, Math.round(bounds.width * factor)));
+  const height = Math.min(area.height, Math.max(minHeight, Math.round(bounds.height * factor)));
+  const x = Math.max(area.x, Math.min(area.x + area.width - width, bounds.x + Math.round((bounds.width - width) / 2)));
+  const y = Math.max(area.y, Math.min(area.y + area.height - height, bounds.y + Math.round((bounds.height - height) / 2)));
+  const resize = () => window.setBounds({ x, y, width, height });
+  if (window.isMaximized()) {
+    window.once('unmaximize', resize);
+    window.unmaximize();
+  } else {
+    resize();
+  }
+}
+
 register('window-control', action => {
   switch (action) {
     case 'minimize':
@@ -576,8 +687,11 @@ else app.whenReady().then(() => {
     backgroundColor: '#21141d', autoHideMenuBar: true,
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), sandbox: true, webviewTag: true }
   });
+  window.webContents.on('before-input-event', handleWindowResizeShortcut);
+  window.webContents.on('did-attach-webview', (_event, guest) => {
+    guest.on('before-input-event', handleWindowResizeShortcut);
+  });
   preview = createPreview(window, (owner, update) => send('preview-update', owner, update));
-  window.webContents.once('did-finish-load', () => appUpdates.check());
   window.on('maximize', () => send('window-maximized', true));
   window.on('unmaximize', () => send('window-maximized', false));
   window.on('move', () => send('window-moved'));

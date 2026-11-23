@@ -18,6 +18,8 @@ Perona is a Windows desktop workspace for **Codex CLI** and **Claude Code**. Run
 
 You can also drop a folder from File Explorer onto the **Codex** or **Claude** section to start a project there.
 
+To download an existing repository, select **Clone repository** in the sidebar or Git tab. Paste its HTTPS or SSH clone URL, pick an agent, and choose an empty destination folder. Perona opens the cloned folder as a project, where you can use **Pull** to fetch later changes.
+
 You only need the CLI for the agent you plan to use. Git for Windows is required for the Git tools. XAMPP is optional.
 
 ## Work in a project
@@ -34,7 +36,7 @@ Drag tabs or a tab bar to another pane or to one of its edges to split the works
 | **Changes** | Review local Git status and diffs. |
 | **Git** | Initialize Git, stage and commit changes, add a remote, fetch, pull, and push. To publish a new project, create the repository on GitHub or GitLab and paste its clone URL into Perona. |
 | **Preview** | Open a localhost page or a local hosts-file alias. **Use project URL** detects supported XAMPP project URLs. |
-| **Terminal** | Run shell commands in the project folder. Perona uses fish through Git Bash when available, or through MSYS2. Select **Install fish** if fish is missing. |
+| **Terminal** | Run shell commands in the project folder. Select **Install fish** to install Fish, the Fisher plugin manager, and zoxide for Git Bash. Perona uses the Git for Windows SDK when Git Bash has no package manager. |
 
 ### Chat shortcuts
 
@@ -48,7 +50,11 @@ Drag tabs or a tab bar to another pane or to one of its edges to split the works
 
 Use **Ctrl+S** to save an open file in the editor.
 
+Use **Ctrl+−** or **Ctrl++** to resize the Perona window. **Ctrl+=** also makes it bigger.
+
 In **Git → Remove from Git**, choose a tracked path to stage its removal while keeping its local copy. Commit and push to remove it from the current remote branch. Add the path to `.gitignore` if it should stay untracked.
+
+In **Git**, select **Compare merge** or **Pull** to fetch the latest commits and review branch differences. Perona lists any files Git predicts will conflict and blocks the merge if there are conflicts. When the comparison is clear, select **Merge fetched changes**.
 
 Drop files or folders from File Explorer onto the **Files** tab to copy them into the project root, or onto a folder in the tree to copy them there. If the destination already contains an item with that name, choose **Replace** or **Skip**. Replacing a folder replaces all its contents.
 

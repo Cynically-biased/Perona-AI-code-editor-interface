@@ -3,7 +3,7 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 contextBridge.exposeInMainWorld('desk', {
   windowControl: action => ipcRenderer.invoke('window-control', action),
   appUpdateStatus: () => ipcRenderer.invoke('app-update-status'),
-  checkAppUpdate: () => ipcRenderer.invoke('app-update-check'),
+  checkAppUpdate: (download = true) => ipcRenderer.invoke('app-update-check', download),
   earlierAppVersions: () => ipcRenderer.invoke('app-update-versions'),
   downloadAppDowngrade: version => ipcRenderer.invoke('app-update-downgrade', version),
   installAppUpdate: () => ipcRenderer.invoke('app-update-install'),
@@ -11,7 +11,9 @@ contextBridge.exposeInMainWorld('desk', {
   onConfirmWindowClose: callback => ipcRenderer.on('confirm-window-close', () => callback()),
   onWindowMaximized: callback => ipcRenderer.on('window-maximized', (_event, maximized) => callback(maximized)),
   onWindowMoved: callback => ipcRenderer.on('window-moved', () => callback()),
-  defaultFolder: () => ipcRenderer.invoke('default-folder'),
+  addNewProject: (id, agent, name, preferred) => ipcRenderer.invoke('workspace-add-new-project', id, agent, name, preferred),
+  pickSettingsFolder: preferred => ipcRenderer.invoke('settings-pick-folder', preferred),
+  setInterfaceZoom: percent => ipcRenderer.invoke('settings-zoom', percent),
   addDroppedProject: (id, agent, name, file) =>
     ipcRenderer.invoke('workspace-add-dropped-project', id, agent, name, webUtils.getPathForFile(file)),
   importProjectFiles: (id, folder, files, replacement) =>
@@ -52,6 +54,7 @@ contextBridge.exposeInMainWorld('desk', {
   removeEntry: (id, relative, directory) => ipcRenderer.invoke('project-remove', id, relative, directory),
   changes: id => ipcRenderer.invoke('project-changes', id),
   gitStatus: id => ipcRenderer.invoke('git-status', id),
+  cloneRepository: (id, agent, name, url, preferred) => ipcRenderer.invoke('git-clone', id, agent, name, url, preferred),
   gitTrackedPaths: id => ipcRenderer.invoke('git-tracked-paths', id),
   gitAction: (id, action, data) => ipcRenderer.invoke('git-action', id, action, data),
   gitCreatePage: provider => ipcRenderer.invoke('git-create-page', provider),

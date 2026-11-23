@@ -15,7 +15,7 @@ function showAppUpdate({ state, version, downgrade }) {
   updateButton.textContent = {
     checking: 'Checking…', downloading: downgrade ? 'Downloading v' + version + '…' : 'Downloading update…',
     ready: downgrade ? 'Restart to downgrade' : 'Restart to update',
-    installing: 'Restarting…', current: 'Up to date', error: 'Retry update check'
+    installing: 'Restarting…', current: 'Up to date', available: 'Download update', error: 'Retry update check'
   }[state] ?? 'Check for updates';
   updateButton.title = version ? 'Perona ' + version : 'Check for a Perona update';
 }
@@ -382,15 +382,70 @@ async function openChat(agent, droppedFolder) {
     const name = names[agent] + ' ' + ++counters[agent];
     const folder = droppedFolder
       ? await window.desk.addDroppedProject(id, agent, name, droppedFolder)
-      : await window.desk.defaultFolder();
-    const project = { id, folder, view: 'chat' };
-    const chat = createChat(agent, id, name, [project], id);
-    selectChat(chat);
-    await resumeProject(chat, id);
+      : await window.desk.addNewProject(id, agent, name, appPreferences.folder);
+    await openProjectFolder(id, agent, name, folder);
   } catch (error) {
     setError(error);
   }
 }
+
+async function openProjectFolder(id, agent, name, folder) {
+  const project = { id, folder, view: 'chat' };
+  const chat = createChat(agent, id, name, [project], id);
+  selectChat(chat);
+  await resumeProject(chat, id);
+}
+
+const cloneDialog = document.getElementById('clone-dialog');
+const cloneForm = cloneDialog.querySelector('form');
+const cloneUrl = document.getElementById('clone-url');
+const cloneAgent = document.getElementById('clone-agent');
+const cloneStatus = document.getElementById('clone-status');
+let cloning = false;
+
+function openCloneDialog(agent = appPreferences.agent) {
+  if (!workspaceReady || cloneDialog.open) return;
+  cloneForm.reset();
+  cloneAgent.value = agent;
+  cloneStatus.hidden = true;
+  cloneDialog.showModal();
+  syncPreview();
+}
+
+document.getElementById('clone-project').addEventListener('click', () => openCloneDialog());
+document.getElementById('preferred-new-project').addEventListener('click', () => openChat(appPreferences.agent));
+document.getElementById('clone-cancel').addEventListener('click', () => cloneDialog.close());
+cloneDialog.addEventListener('cancel', event => {
+  if (cloning) event.preventDefault();
+});
+cloneForm.addEventListener('submit', async event => {
+  event.preventDefault();
+  if (cloning) return;
+  cloning = true;
+  const id = crypto.randomUUID();
+  const agent = cloneAgent.value;
+  const url = cloneUrl.value;
+  const name = names[agent] + ' ' + ++counters[agent];
+  const controls = [...cloneForm.elements];
+  for (const control of controls) control.disabled = true;
+  cloneStatus.hidden = false;
+  cloneStatus.textContent = 'Choose an empty folder. Cloning will start after you select it.';
+  try {
+    const folder = await window.desk.cloneRepository(id, agent, name, url, appPreferences.folder);
+    if (folder) {
+      cloneDialog.close();
+      await openProjectFolder(id, agent, name, folder);
+    } else {
+      cloneStatus.hidden = true;
+    }
+  } catch (error) {
+    if (cloneDialog.open) cloneStatus.textContent = readableError(error);
+    else setError(error);
+  } finally {
+    cloning = false;
+    for (const control of controls) control.disabled = false;
+  }
+});
 
 async function openProjectChat(source, agent) {
   if (!source.current || source.switching || source.closing) return;
@@ -426,9 +481,9 @@ async function restoreWorkspace() {
       }
     }
     const previous = chats.get(saved.active);
-    if (previous) {
+    if (previous && appPreferences.startup !== 'blank') {
       selectChat(previous, false);
-      resumeProject(previous, previous.selectedId);
+      if (appPreferences.startup === 'resume') resumeProject(previous, previous.selectedId);
     }
     workspaceReady = true;
   } catch (error) {
@@ -444,7 +499,7 @@ async function startSession(chat, project, record, usePickedFolder) {
   const body = view.root.querySelector('.agent-terminal');
   const { terminal, fit } = createTerminal({ cursorBlink: false });
   const session = { id, chat, folder, project, record, extra, agent: record.agent ?? chat.agent,
-    body, terminal, view, running: false, ended: false };
+    body, terminal, fit, view, running: false, ended: false };
   configureWorkspace(session);
   configureChatInput(session);
   terminal.open(body);
@@ -548,34 +603,29 @@ function usageChart(title, buckets) {
     return element;
   };
   const amount = used => usageAmount.format(used) + '%';
+  const slotWidth = 194 / Math.max(1, buckets.length);
   const points = buckets.flatMap(({ used, start }, index) => Number.isFinite(used)
-    ? [{ used, start, index, x: 3 + index / (buckets.length - 1) * 194 }] : []);
+    ? [{ used, start, x: 3 + index * slotWidth }] : []);
   const latest = points.at(-1);
   const plot = svg('svg', { viewBox: '0 0 200 39', preserveAspectRatio: 'none', role: 'img',
-    'aria-label': title + ' of account-wide 7-day limit usage. Dashed lines skip missing hours.' });
-  const values = points.map(point => point.used);
-  const low = values.length ? Math.floor(Math.min(...values) / 10) * 10 : 0;
-  const high = values.length ? Math.max(low + 10, Math.ceil(Math.max(...values) / 10) * 10) : 100;
-  const y = used => 35 - (used - low) / (high - low) * 31;
+    'aria-label': title + ' of account-wide 7-day limit usage. Each bar represents an hourly reading.' });
+  const high = Math.max(100, Math.ceil(Math.max(0, ...points.map(point => point.used)) / 10) * 10);
   for (const level of [4, 19.5, 35]) {
     plot.append(svg('line', { x1: 3, x2: 197, y1: level, y2: level, class: 'usage-grid' }));
   }
-  for (const [index, point] of points.entries()) {
-    const previous = points[index - 1];
-    if (previous) plot.append(svg('line', {
-      x1: previous.x, y1: y(previous.used), x2: point.x, y2: y(point.used),
-      class: point.index - previous.index > 1 ? 'usage-line usage-gap' : 'usage-line'
-    }));
-    const dot = svg('circle', { cx: point.x, cy: y(point.used), r: point === latest ? 2.5 : 1.25 });
+  for (const point of points) {
+    const height = Math.max(1, point.used / high * 31);
+    const bar = svg('rect', { x: point.x + slotWidth * .1, y: 35 - height,
+      width: slotWidth * .8, height, class: point === latest ? 'usage-bar latest' : 'usage-bar' });
     const tooltip = svg('title', {});
     tooltip.textContent = usageDate.format(point.start) + ' · ' + amount(point.used) + ' used';
-    dot.append(tooltip);
-    plot.append(dot);
+    bar.append(tooltip);
+    plot.append(bar);
   }
   const caption = node('figcaption');
   caption.append(node('strong', title), node('span', latest ? amount(latest.used) + ' used' : 'Collecting readings'));
   const axis = node('div', '', 'usage-axis');
-  axis.append(node('span', amount(low) + '–' + amount(high) + ' scale'),
+  axis.append(node('span', '0%–' + amount(high) + ' scale'),
     node('span', latest ? usageDate.format(latest.start) : ''));
   chart.append(caption, plot, axis);
   return chart;
@@ -694,4 +744,6 @@ window.addEventListener('beforeunload', event => {
     event.returnValue = false;
   }
 });
+applySettingsDisplay();
 restoreWorkspace();
+if (appPreferences.updates !== 'manual') window.desk.checkAppUpdate(appPreferences.updates === 'download').catch(setError);

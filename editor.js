@@ -18,7 +18,13 @@ function monacoReady() {
             'editorCursor.foreground': '#ff9fc7', 'editorGutter.background': '#1b121a'
           }
         });
-        resolve();
+        window.require(['vs/platform/keybinding/common/keybindingsRegistry', 'vs/base/browser/keyboardEvent'],
+          (registry, keyboard) => {
+            try {
+              initializeEditorShortcuts(registry.KeybindingsRegistry, keyboard.StandardKeyboardEvent);
+              resolve();
+            } catch (error) { reject(error); }
+          }, reject);
       }, reject);
     }).catch(error => {
       editorReady = undefined;
@@ -194,10 +200,9 @@ async function loadPreview(session, relative, reload = false) {
       await monacoReady();
       if (!view.editor) {
         view.editor = monaco.editor.create(view.fileEditor, {
-          model: null, theme: 'perona', automaticLayout: true, fontSize: 13,
-          minimap: { enabled: false }, scrollBeyondLastLine: false, lineNumbers: 'on'
+          model: null, theme: 'perona', automaticLayout: true,
+          scrollBeyondLastLine: false, lineNumbers: 'on', ...editorDisplayOptions()
         });
-        view.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => saveEditor(session));
         view.editor.onDidChangeModelContent(() => {
           updateEditor(view);
           if (dirty(view.file)) reportPetActivity('edit', view.fileEditor);
@@ -211,6 +216,7 @@ async function loadPreview(session, relative, reload = false) {
       } else {
         file.model = monaco.editor.createModel(text, undefined, uri);
       }
+      file.model.updateOptions({ tabSize: appPreferences.tabWidth, indentSize: 'tabSize' });
     }
     view.files.set(relative, file);
     showEditorFile(session, file);

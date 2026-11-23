@@ -17,6 +17,7 @@
   <script defer src="dock-model.js"></script>
   <script defer src="dock.js"></script>
   <script defer src="workspace.js"></script>
+  <script defer src="settings.js"></script>
   <script defer src="renderer.js"></script>
   <script defer src="perona-pet.js"></script>
 </head>
@@ -37,6 +38,9 @@
   <div class="workspace">
     <aside class="sidebar" aria-label="Manage chats">
       <div class="sidebar-projects">
+      <button id="preferred-new-project" class="app-settings-button" type="button">New project</button>
+      <button id="clone-project" class="clone-project" type="button">Clone repository</button>
+      <button id="open-settings" class="app-settings-button" type="button">Settings</button>
       <section class="agent" aria-labelledby="codex-heading">
         <header>
           <h2 id="codex-heading"><img src="codex-logo.png" width="22" height="22" alt="">Codex</h2>
@@ -134,7 +138,7 @@
           <div class="changes-content"></div>
         </section>
         <section class="project-view" data-panel="git" aria-label="Git repository" hidden>
-          <div class="view-heading"><h3>Git repository</h3><button class="git-refresh" type="button">Refresh</button></div>
+          <div class="view-heading"><h3>Git repository</h3><button class="git-clone" type="button">Clone repository</button><button class="git-refresh" type="button">Refresh</button></div>
           <div class="git-content">
             <p class="git-message" role="status"></p>
             <fieldset class="git-controls" disabled>
@@ -148,6 +152,7 @@
                 <p class="git-origin-label"></p>
                 <div class="git-actions">
                   <button type="button" data-git-action="fetch">Fetch</button>
+                  <button type="button" class="git-compare">Compare merge</button>
                   <button type="button" data-git-action="pull">Pull</button>
                   <button type="button" data-git-action="push">Push</button>
                 </div>
@@ -283,6 +288,95 @@
       <div class="dialog-actions">
         <button value="cancel" autofocus>Cancel</button>
         <button value="save" id="confirm-action"></button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="merge-dialog" aria-labelledby="merge-title">
+    <form method="dialog">
+      <h2 id="merge-title">Compare merge</h2>
+      <p id="merge-status" role="status"></p>
+      <ul id="merge-conflicts" aria-label="Predicted conflicts" hidden></ul>
+      <pre id="merge-summary" hidden></pre>
+      <details id="merge-diff-section" hidden>
+        <summary>Show differences between branches</summary>
+        <pre id="merge-diff"></pre>
+      </details>
+      <div class="dialog-actions">
+        <button value="cancel" autofocus>Close</button>
+        <button id="merge-apply" value="merge" disabled>Merge fetched changes</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="clone-dialog" aria-labelledby="clone-title">
+    <form>
+      <h2 id="clone-title">Clone repository</h2>
+      <label for="clone-url">Repository URL</label>
+      <input id="clone-url" placeholder="HTTPS or SSH clone URL" maxlength="2048" required autofocus>
+      <label for="clone-agent">Open with</label>
+      <select id="clone-agent"><option value="codex">Codex</option><option value="claude">Claude</option></select>
+      <p id="clone-status" role="status" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" id="clone-cancel">Cancel</button>
+        <button type="submit">Choose folder and clone</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="settings-dialog" aria-labelledby="settings-title">
+    <form method="dialog">
+      <h2 id="settings-title">Settings</h2>
+      <label for="settings-terminal-font">Terminal font size</label>
+      <input id="settings-terminal-font" type="number" min="10" max="24" step="1" required>
+      <label class="settings-check"><input id="settings-pet-visible" type="checkbox"> Show Chibi Perona</label>
+      <label class="settings-check"><input id="settings-pet-roam" type="checkbox"> Let Chibi Perona roam</label>
+      <label class="settings-check"><input id="settings-usage-visible" type="checkbox"> Show agent usage in the sidebar</label>
+      <details>
+        <summary>Editor</summary>
+        <label>Font size <input id="settings-editor-font" type="number" min="10" max="40" required></label>
+        <label>Tab width <input id="settings-editor-tabs" type="number" min="1" max="8" required></label>
+        <label class="settings-check"><input id="settings-editor-wrap" type="checkbox"> Word wrap</label>
+        <label class="settings-check"><input id="settings-editor-minimap" type="checkbox"> Show minimap</label>
+      </details>
+      <details>
+        <summary>Startup and projects</summary>
+        <label>On startup <select id="settings-startup">
+          <option value="resume">Resume last project and agents</option>
+          <option value="manual">Show last project and start agents manually</option>
+          <option value="blank">Start with a blank workspace</option>
+        </select></label>
+        <label>Default agent <select id="settings-agent"><option value="codex">Codex</option><option value="claude">Claude</option></select></label>
+        <label for="settings-folder">Default project folder</label>
+        <input id="settings-folder" readonly placeholder="System default">
+        <button id="settings-pick-folder" type="button">Browse…</button>
+        <button id="settings-clear-folder" type="button">Use system default</button>
+      </details>
+      <details>
+        <summary>App updates and appearance</summary>
+        <label>On startup <select id="settings-updates">
+          <option value="download">Check and download updates</option>
+          <option value="check">Check only</option>
+          <option value="manual">Check manually</option>
+        </select></label>
+        <label>Interface zoom <select id="settings-zoom">
+          <option value="80">80%</option><option value="90">90%</option><option value="100">100%</option>
+          <option value="110">110%</option><option value="125">125%</option><option value="150">150%</option>
+        </select></label>
+      </details>
+      <details id="settings-keybindings">
+        <summary>Editor keyboard shortcuts</summary>
+        <label for="settings-command">Editor command</label>
+        <input id="settings-command-filter" type="search" aria-label="Filter editor commands" placeholder="Search commands">
+        <select id="settings-command"></select>
+        <p id="settings-shortcut-status" role="status"></p>
+        <div class="settings-shortcut-actions">
+          <button id="settings-record" type="button">Record shortcut</button>
+          <button id="settings-record-chord" type="button">Record two keys</button>
+          <button id="settings-unbind" type="button">Disable shortcut</button>
+          <button id="settings-reset-key" type="button">Restore default</button>
+        </div>
+      </details>
+      <div class="dialog-actions">
+        <button value="cancel" formnovalidate>Cancel</button>
+        <button value="save">Save settings</button>
       </div>
     </form>
   </dialog>

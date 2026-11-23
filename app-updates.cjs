@@ -18,7 +18,7 @@ function createAppUpdates(enabled, notify, currentVersion) {
     notify(status);
   }
 
-  async function prepare(updater, version) {
+  async function prepare(updater, version, download = true) {
     prepared = undefined;
     set('checking', version, Boolean(version));
     updater.autoInstallOnAppQuit = false;
@@ -30,6 +30,10 @@ function createAppUpdates(enabled, notify, currentVersion) {
       }
       if (!result?.isUpdateAvailable) {
         set(result ? 'current' : 'unavailable');
+        return;
+      }
+      if (!download) {
+        set('available', result.updateInfo.version);
         return;
       }
       set('downloading', result.updateInfo.version, Boolean(version));
@@ -45,9 +49,9 @@ function createAppUpdates(enabled, notify, currentVersion) {
   const busy = () => ['checking', 'downloading', 'installing'].includes(status.state);
   return {
     status: () => status,
-    async check() {
+    async check(download = true) {
       if (status.state === 'unavailable' || status.state === 'ready' || busy()) return;
-      await prepare(autoUpdater);
+      await prepare(autoUpdater, undefined, download);
     },
     async earlierVersions() {
       if (!enabled || !stableVersion.test(currentVersion) || busy()) return [];

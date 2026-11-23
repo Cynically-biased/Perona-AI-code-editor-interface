@@ -1,7 +1,17 @@
+function terminalFontSize() {
+  const size = Number(localStorage.getItem('perona-terminal-font'));
+  return Number.isInteger(size) && size >= 10 && size <= 24 ? size : 13;
+}
+
+function updateTerminalFont(terminal, body, fit, size) {
+  terminal.options.fontSize = size;
+  fitTerminal(body, fit);
+}
+
 function createTerminal({ cursorBlink = true, readOnly = false } = {}) {
   const terminal = new Terminal({
     cursorBlink, fontFamily: 'Cascadia Mono, Consolas, monospace',
-    fontSize: 13, scrollback: 5000,
+    fontSize: terminalFontSize(), scrollback: 5000,
     disableStdin: readOnly,
     theme: {
       background: '#1b121a', foreground: '#fff0e7', cursor: '#ff91c1',
@@ -54,6 +64,11 @@ function configureChatInput(session) {
   let redraw;
   let viewer;
   let browsing = false;
+  session.updateHistoryFont = size => {
+    if (!viewer) return;
+    viewer.terminal.options.fontSize = size;
+    if (!history.hidden) layoutHistory();
+  };
 
   function promptRow() {
     const buffer = terminal.buffer.active;
@@ -229,7 +244,7 @@ async function installProjectFish(session) {
   const { shell } = session;
   shell.state = 'installing';
   shell.start.disabled = true;
-  shell.status.textContent = 'Installing fish with MSYS2…';
+  shell.status.textContent = 'Installing Fish, Fisher, and zoxide for Git Bash…';
   try {
     await window.desk.installFish();
     if (sessions.get(session.id) !== session) return;
@@ -267,7 +282,7 @@ async function startProjectShell(session, focus = false) {
     if (shell.state !== 'starting' || sessions.get(session.id) !== session) return;
     if (result?.missingFish) {
       shell.state = 'missing';
-      shell.status.textContent = 'Fish is missing. Install it with MSYS2.';
+      shell.status.textContent = 'Fish is missing. Install it for Git Bash.';
       shell.start.textContent = 'Install fish';
       shell.start.hidden = false;
       return;

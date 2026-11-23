@@ -434,7 +434,7 @@ function reportPetActivity(kind, target) {
     const delta = Math.min(time - previousTime, 66);
     previousTime = time;
     const menuOpen = contextMenu.matches(':popover-open');
-    if (document.hidden || (drag && !action.reaction)) return;
+    if (document.hidden || pet.hidden || (drag && !action.reaction)) return;
     if (feedback) {
       feedback.elapsed += delta;
       if (feedback.elapsed >= feedback.duration) feedback = undefined;
@@ -470,11 +470,16 @@ function reportPetActivity(kind, target) {
   }
 
   function toggleStayHere() {
-    stayHere = !stayHere;
-    localStorage.setItem(stayHereKey, String(stayHere));
-    if (stayHere && !action.reaction) play('idle');
+    localStorage.setItem(stayHereKey, String(!stayHere));
+    applyRoamingPreference();
     notice('command', true);
   }
+
+  function applyRoamingPreference() {
+    stayHere = localStorage.getItem(stayHereKey) === 'true';
+    if (stayHere && !action.reaction) play('idle');
+  }
+  document.addEventListener('perona-roaming-change', applyRoamingPreference);
 
   function choose(kind) {
     play(kind);

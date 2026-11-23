@@ -1,9 +1,12 @@
+const mergeDialog = document.getElementById('merge-dialog');
+
 function configureGit(session) {
   const panel = session.view.root.querySelector('[data-panel="git"]');
   const find = selector => panel.querySelector(selector);
   const git = session.view.git = {
     controls: find('.git-controls'),
     refresh: find('.git-refresh'),
+    compare: find('.git-compare'),
     message: find('.git-message'),
     repository: find('.git-repository'),
     branch: find('.git-branch'),
@@ -22,6 +25,8 @@ function configureGit(session) {
   };
 
   git.refresh.addEventListener('click', () => refreshGit(session));
+  git.compare.addEventListener('click', () => compareGitMerge(session));
+  find('.git-clone').addEventListener('click', () => openCloneDialog(session.agent));
   for (const [action, button] of Object.entries(git.actions)) {
     button.addEventListener('click', async () => {
       let data;
@@ -31,9 +36,8 @@ function configureGit(session) {
         data = { branch, push };
       }
       if (action === 'pull') {
-        data = git.pullSource;
-        if (!await confirmAction('Pull from ' + data + '?',
-          'Git may create a merge commit to combine the local and remote histories.', 'Pull')) return;
+        await compareGitMerge(session);
+        return;
       }
       if (action === 'stage-all'
           && !await confirmAction('Stage all changes?',
@@ -71,6 +75,54 @@ function configureGit(session) {
   });
 }
 
+async function compareGitMerge(session) {
+  const git = session.view.git;
+  if (git.busy || !git.pullSource || document.querySelector('dialog[open]')) return;
+  const status = mergeDialog.querySelector('#merge-status');
+  const conflicts = mergeDialog.querySelector('#merge-conflicts');
+  const summary = mergeDialog.querySelector('#merge-summary');
+  const diffSection = mergeDialog.querySelector('#merge-diff-section');
+  const diff = mergeDialog.querySelector('#merge-diff');
+  const apply = mergeDialog.querySelector('#merge-apply');
+  const source = git.pullSource;
+  let plan;
+  let closed = false;
+  status.textContent = 'Fetching and comparing ' + source + '…';
+  conflicts.hidden = summary.hidden = diffSection.hidden = true;
+  diffSection.open = false;
+  apply.disabled = true;
+  mergeDialog.returnValue = '';
+  mergeDialog.addEventListener('close', async () => {
+    closed = true;
+    if (mergeDialog.returnValue !== 'merge' || !plan || apply.disabled || sessions.get(session.id) !== session) return;
+    if ([...sessions.values()].some(item => item.folder.toLowerCase() === session.folder.toLowerCase()
+        && hasUnsavedFile(item.view))) {
+      git.message.textContent = 'Save your editor changes before merging.';
+      return;
+    }
+    await runGitAction(session, 'pull', plan);
+  }, { once: true });
+  mergeDialog.showModal();
+  syncPreview();
+  try {
+    plan = await window.desk.gitAction(session.id, 'compare-merge', source);
+    if (closed || !mergeDialog.open) return;
+    const counts = plan.localOnly + ' local-only and ' + plan.incomingOnly + ' incoming commit(s). ';
+    status.textContent = counts + (plan.conflicts.length ? 'Git predicts conflicts. Your files are unchanged.'
+      : plan.incomingOnly ? 'Git found no merge conflicts.' : 'There are no incoming changes.');
+    if (plan.diff === null) status.textContent += ' The full comparison is too large to display.';
+    conflicts.replaceChildren(...plan.conflicts.map(path => node('li', path)));
+    conflicts.hidden = !plan.conflicts.length;
+    summary.textContent = plan.summary.trim();
+    summary.hidden = !summary.textContent;
+    diff.textContent = plan.diff || '';
+    diffSection.hidden = !plan.diff;
+    apply.disabled = Boolean(plan.conflicts.length || !plan.incomingOnly);
+  } catch (error) {
+    if (!closed && mergeDialog.open) status.textContent = readableError(error);
+  }
+}
+
 async function loadTrackedGitPaths(session) {
   const git = session.view.git;
   try {
@@ -101,6 +153,7 @@ function renderGit(session, status) {
   git.actions.fetch.disabled = !status.origin;
   git.pullSource = status.upstream || (status.origin && status.branch ? 'origin/' + status.branch : '');
   git.actions.pull.disabled = !status.head || !status.branch || !git.pullSource;
+  git.compare.disabled = git.actions.pull.disabled;
   git.actions.push.disabled = !status.origin || !status.push || !status.branch
     || !status.head || status.push.includes('\n');
   git.actions['stage-all'].disabled = status.conflicts || !status.files.some(file => file.code[1] !== ' ');

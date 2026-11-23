@@ -3,7 +3,7 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
 const assets = new Set([
-  'index.html', 'style.css', 'renderer.js', 'workspace.js', 'dock.js', 'dock-model.js', 'editor.js', 'tools.js', 'git.js',
+  'index.html', 'style.css', 'renderer.js', 'workspace.js', 'dock.js', 'dock-model.js', 'editor.js', 'tools.js', 'git.js', 'settings.js',
   'perona.png', 'codex-logo.png', 'claude-logo.png', 'monaco-worker.js', 'perona-pet.js', 'terminal-ui.js'
 ]);
 

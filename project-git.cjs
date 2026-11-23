@@ -180,13 +180,41 @@ async function gitAction(folder, action, data) {
       case 'fetch':
         if (status.origin) return await git(['fetch', '--no-recurse-submodules', 'origin'], true);
         break;
-      case 'pull': {
+      case 'compare-merge': {
         const source = status.upstream || (status.origin && status.branch ? 'origin/' + status.branch : '');
         if (!status.head || !status.branch || !source || source !== data) break;
+        const [remote, ref] = status.upstream
+          ? (await runGit(folder, ['for-each-ref', '--format=%(upstream:remotename)%00%(upstream:remoteref)',
+            'refs/heads/' + status.branch])).trim().split('\0')
+          : ['origin', 'refs/heads/' + status.branch];
+        if (!remote || !ref) throw new Error('The upstream branch is unavailable.');
+        await git(['fetch', '--no-recurse-submodules', '--', remote, ref], true);
+        const incoming = (await runGit(folder, ['rev-parse', '--verify', 'FETCH_HEAD^{commit}'])).trim();
+        const [conflicts, summary, counts, diff] = await Promise.all([
+          mergeConflicts(folder, status.head, incoming),
+          runGit(folder, ['diff', '--no-ext-diff', '--no-textconv', '--stat=80,48,50', status.head, incoming, '--']),
+          runGit(folder, ['rev-list', '--left-right', '--count', status.head + '...' + incoming]),
+          runGit(folder, ['diff', '--no-ext-diff', '--no-textconv', '--no-color', status.head, incoming, '--'])
+            .catch(error => {
+              if (error.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') return null;
+              throw error;
+            })
+        ]);
+        const [localOnly, incomingOnly] = counts.trim().split(/\s+/).map(Number);
+        return { head: status.head, branch: status.branch, incoming, conflicts, summary, diff, localOnly, incomingOnly };
+      }
+      case 'pull': {
+        if (!status.head || status.head !== data?.head || status.branch !== data?.branch ||
+            typeof data?.incoming !== 'string' || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(data.incoming)) {
+          throw new Error('The current branch changed. Compare the merge again.');
+        }
         if (status.files.length) throw new Error('Commit or stash your local changes before pulling.');
-        const target = status.upstream ? [] : ['origin', 'refs/heads/' + status.branch];
-        return await git(['pull', '--no-rebase', '--ff', '--no-edit', '--no-autostash',
-          '--allow-unrelated-histories', '--no-recurse-submodules', ...target], true);
+        const fetched = (await runGit(folder, ['rev-parse', '--verify', 'FETCH_HEAD^{commit}'])).trim();
+        if (fetched !== data.incoming) throw new Error('The fetched commit changed. Compare the merge again.');
+        if ((await mergeConflicts(folder, status.head, fetched)).length) {
+          throw new Error('Git predicts merge conflicts. No files were merged.');
+        }
+        return await git(['merge', '-s', 'ort', '--ff', '--no-edit', '--no-autostash', '--allow-unrelated-histories', fetched]);
       }
         break;
       case 'push':
@@ -205,4 +233,26 @@ async function gitAction(folder, action, data) {
   }
 }
 
-module.exports = { runGit, gitStatus, gitAction, trackedGitPaths };
+async function mergeConflicts(folder, head, incoming) {
+  try {
+    await runGit(folder, ['merge-tree', '--write-tree', '--name-only', '--no-messages', '-z',
+      '--allow-unrelated-histories', head, incoming]);
+    return [];
+  } catch (error) {
+    if (error.code !== 1) throw error;
+    const paths = error.stdout.split('\0').slice(1).filter(Boolean);
+    return paths.length ? paths : ['Git found a conflict.'];
+  }
+}
+
+async function cloneRepository(folder, url) {
+  try {
+    await runGit(folder, ['clone', '--no-recurse-submodules', '--', remoteUrl(url), '.'],
+      { readOnly: false, network: true });
+  } catch (error) {
+    if (error.code === 'ENOENT') throw new Error('Install Git for Windows to clone a repository.');
+    throw gitError(error);
+  }
+}
+
+module.exports = { runGit, gitStatus, gitAction, trackedGitPaths, cloneRepository };
