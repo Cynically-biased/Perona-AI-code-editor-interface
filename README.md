@@ -2,7 +2,7 @@
 
 Perona is a Windows desktop workspace for **Codex CLI** and **Claude Code**. Run multiple agent chats in the same project, edit files, review changes, and preview your local site from one window.
 
-[Download the latest Windows release](https://github.com/Cynically-biased/Perona-AI-code-editor-interface/releases/latest)
+[Download the latest Windows release](https://github.com/Cynically-biased/perona-ai-coding-workbench/releases/latest)
 
 ## Install and open your first project
 

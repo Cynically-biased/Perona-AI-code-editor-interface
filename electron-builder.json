@@ -17,7 +17,7 @@
   "publish": {
     "provider": "github",
     "owner": "Cynically-biased",
-    "repo": "Perona-AI-code-editor-interface",
+    "repo": "perona-ai-coding-workbench",
     "private": false
   },
   "win": {

@@ -1,6 +1,6 @@
 const { autoUpdater, NsisUpdater } = require('electron-updater');
 
-const repository = 'Cynically-biased/Perona-AI-code-editor-interface';
+const repository = 'Cynically-biased/perona-ai-coding-workbench';
 const stableVersion = /^(?:0|[1-9]\d{0,8})\.(?:0|[1-9]\d{0,8})\.(?:0|[1-9]\d{0,8})$/;
 
 function compareVersions(first, second) {
