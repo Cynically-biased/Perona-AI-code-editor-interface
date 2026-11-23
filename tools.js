@@ -83,14 +83,18 @@ document.addEventListener('dragover', updateDragLift, true);
 document.addEventListener('dragend', releaseDragItem, true);
 document.addEventListener('drop', releaseDragItem, true);
 
-function showContextMenu(event, actions, trigger = event.currentTarget) {
+function showContextMenu(event, actions, trigger = event.currentTarget, { hover = false } = {}) {
   event.preventDefault();
   event.stopPropagation();
+  if (menuTrigger !== trigger && menuTrigger?.id === 'project-menu') {
+    menuTrigger.setAttribute('aria-expanded', 'false');
+  }
   menuTrigger = trigger;
   const rect = trigger.getBoundingClientRect();
   const keyboard = event.type === 'contextmenu' && !event.clientX && !event.clientY;
-  const x = keyboard ? rect.left : event.type === 'click' ? rect.left : event.clientX;
-  const y = keyboard || event.type === 'click' ? rect.bottom : event.clientY;
+  const anchored = hover || keyboard || event.type === 'click';
+  const x = anchored ? rect.left : event.clientX;
+  const y = anchored ? rect.bottom : event.clientY;
   const buttons = actions.map(([label, action]) => {
     const button = node('button', label);
     button.type = 'button';
@@ -104,10 +108,11 @@ function showContextMenu(event, actions, trigger = event.currentTarget) {
     return button;
   });
   contextMenu.replaceChildren(...buttons);
-  if (!contextMenu.matches(':popover-open')) contextMenu.showPopover();
+  contextMenu.classList.toggle('project-dropdown', trigger.id === 'project-menu');
+  if (!contextMenu.matches(':popover-open')) contextMenu.showPopover({ source: trigger });
   contextMenu.style.left = Math.max(4, Math.min(x, innerWidth - contextMenu.offsetWidth - 4)) + 'px';
   contextMenu.style.top = Math.max(4, Math.min(y, innerHeight - contextMenu.offsetHeight - 4)) + 'px';
-  buttons[0]?.focus();
+  if (!hover) buttons[0]?.focus();
 }
 
 contextMenu.addEventListener('keydown', event => {

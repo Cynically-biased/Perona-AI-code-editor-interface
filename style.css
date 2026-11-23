@@ -425,6 +425,13 @@ dialog input {
   text-align: left; font-size: 13px;
 }
 .context-menu button:hover, .context-menu button:focus-visible { background: var(--selected); }
+@media (prefers-reduced-motion: no-preference) {
+  .context-menu.project-dropdown:popover-open { animation: project-dropdown-in 140ms ease-out; }
+  @keyframes project-dropdown-in {
+    from { opacity: 0; transform: translateY(-5px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+}
 .file-tabs { display: flex; overflow-x: auto; flex: none; background: #291925; border-bottom: 1px solid var(--line); }
 .file-tabs[hidden] { display: none; }
 .file-tab { display: flex; align-items: center; flex: none; max-width: 240px; border-right: 1px solid var(--line); }

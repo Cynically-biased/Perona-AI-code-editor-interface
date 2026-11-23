@@ -428,19 +428,52 @@ function openCloneDialog(agent = appPreferences.agent) {
 }
 
 const projectMenu = document.getElementById('project-menu');
-projectMenu.addEventListener('click', event => {
-  if (contextMenu.matches(':popover-open') && menuTrigger === projectMenu) {
-    contextMenu.hidePopover();
-    return;
-  }
+let projectMenuPinned = false;
+let projectMenuLeave;
+const projectMenuOpen = () => contextMenu.matches(':popover-open') && menuTrigger === projectMenu;
+function showProjectMenu(event, hover = false) {
   showContextMenu(event, [
     ['New project', () => openChat(appPreferences.agent)],
     ['Open project…', () => openChat(appPreferences.agent, undefined, true)],
     ['Clone repository…', () => openCloneDialog()],
     ['Settings', openSettings]
-  ], projectMenu);
+  ], projectMenu, { hover });
+  projectMenu.setAttribute('aria-expanded', 'true');
+}
+
+function closeProjectMenuAfterHover() {
+  clearTimeout(projectMenuLeave);
+  if (!projectMenuOpen() || projectMenuPinned) return;
+  projectMenuLeave = setTimeout(() => {
+    if (projectMenuOpen() && !projectMenuPinned && !projectMenu.matches(':hover')
+        && !contextMenu.matches(':hover, :focus-within')) contextMenu.hidePopover();
+  }, 160);
+}
+
+projectMenu.addEventListener('pointerenter', event => {
+  if (event.pointerType !== 'mouse') return;
+  clearTimeout(projectMenuLeave);
+  if (!projectMenuOpen()) {
+    projectMenuPinned = false;
+    showProjectMenu(event, true);
+  }
 });
-contextMenu.addEventListener('toggle', event => {
+projectMenu.addEventListener('pointerleave', closeProjectMenuAfterHover);
+contextMenu.addEventListener('pointerenter', () => clearTimeout(projectMenuLeave));
+contextMenu.addEventListener('pointerleave', closeProjectMenuAfterHover);
+projectMenu.addEventListener('click', event => {
+  event.preventDefault();
+  clearTimeout(projectMenuLeave);
+  if (projectMenuOpen() && projectMenuPinned) {
+    contextMenu.hidePopover();
+    return;
+  }
+  projectMenuPinned = true;
+  if (!projectMenuOpen()) showProjectMenu(event);
+  else if (event.detail === 0) contextMenu.firstElementChild?.focus();
+});
+contextMenu.addEventListener('beforetoggle', event => {
+  if (event.newState === 'closed') projectMenuPinned = false;
   projectMenu.setAttribute('aria-expanded', String(event.newState === 'open' && menuTrigger === projectMenu));
 });
 document.getElementById('clone-cancel').addEventListener('click', () => cloneDialog.close());
@@ -625,6 +658,12 @@ const usageHour = new Intl.DateTimeFormat(undefined, { weekday: 'short', hour: '
 const usageDay = new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 const usageAmount = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
 
+function usageScaleMax(peak) {
+  if (peak <= 0) return 1;
+  const magnitude = 10 ** Math.floor(Math.log10(Math.max(peak, 0.01)));
+  return [1, 2, 2.5, 5, 10].map(step => step * magnitude).find(limit => limit >= peak);
+}
+
 function usageChart(title, buckets, interval) {
   const chart = node('figure', '', 'usage-chart');
   const date = interval === 'hour' ? usageHour : usageDay;
@@ -638,15 +677,15 @@ function usageChart(title, buckets, interval) {
   const points = buckets.flatMap(({ used, start }, index) => Number.isFinite(used)
     ? [{ used, start, x: 3 + index * slotWidth }] : []);
   const latest = points.at(-1);
+  const high = usageScaleMax(Math.max(0, ...points.map(point => point.used)));
   const plot = svg('svg', { viewBox: '0 0 200 39', preserveAspectRatio: 'none', role: 'img',
     'aria-label': title + ' of account-wide usage. Each bar shows usage added in that ' + interval
-      + ' as a percentage of the seven-day limit.' });
-  const high = Math.max(100, Math.ceil(Math.max(0, ...points.map(point => point.used)) / 10) * 10);
+      + ' as a percentage of the seven-day limit. Scale: 0% to ' + amount(high) + '.' });
   for (const level of [4, 19.5, 35]) {
     plot.append(svg('line', { x1: 3, x2: 197, y1: level, y2: level, class: 'usage-grid' }));
   }
   for (const point of points) {
-    const height = Math.max(1, point.used / high * 31);
+    const height = point.used === 0 ? 0.5 : point.used / high * 31;
     const bar = svg('rect', { x: point.x + slotWidth * .1, y: 35 - height,
       width: slotWidth * .8, height, class: point === latest ? 'usage-bar latest' : 'usage-bar' });
     const tooltip = svg('title', {});
