@@ -100,18 +100,30 @@ register('workspace-add-new-project', async (id, agent, name, preferred) => {
   workspace.add(id, agent, name, id, folder);
   return folder;
 });
-register('settings-pick-folder', async preferred => {
+async function chooseProjectFolder(preferred, options) {
   if (pickerOpen) return null;
   pickerOpen = true;
   try {
     const { canceled, filePaths: [folder] } = await dialog.showOpenDialog(window, {
-      title: 'Choose the default project folder', defaultPath: await preferredProjectFolder(preferred),
-      properties: ['openDirectory', 'createDirectory']
+      defaultPath: await preferredProjectFolder(preferred), ...options
     });
     return canceled ? null : folder;
   } finally {
     pickerOpen = false;
   }
+}
+register('settings-pick-folder', preferred => chooseProjectFolder(preferred, {
+  title: 'Choose the default project folder', properties: ['openDirectory', 'createDirectory']
+}));
+register('workspace-open-project', async (id, agent, name, preferred) => {
+  const selected = await chooseProjectFolder(preferred, {
+    title: 'Open project', buttonLabel: 'Open project', properties: ['openDirectory']
+  });
+  if (!selected) return null;
+  const folder = await realpath(selected);
+  if (!(await stat(folder)).isDirectory()) throw new Error('The selected project folder is unavailable.');
+  workspace.add(id, agent, name, id, folder);
+  return folder;
 });
 register('settings-zoom', percent => {
   if ([80, 90, 100, 110, 125, 150].includes(percent)) window.webContents.setZoomFactor(percent / 100);

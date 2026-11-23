@@ -174,7 +174,7 @@ function applySettingsDisplay() {
   window.desk.setInterfaceZoom(appPreferences.zoom).catch(setError);
 }
 
-document.getElementById('open-settings').addEventListener('click', () => {
+function openSettings() {
   settingsInput('terminal-font').value = terminalFontSize();
   settingsInput('pet-visible').checked = localStorage.getItem('perona-hide-pet') !== 'true';
   settingsInput('pet-roam').checked = localStorage.getItem('perona-stay-here') !== 'true';
@@ -190,7 +190,8 @@ document.getElementById('open-settings').addEventListener('click', () => {
   settingsDialog.returnValue = '';
   settingsDialog.showModal();
   syncPreview();
-});
+}
+document.getElementById('window-settings').addEventListener('click', openSettings);
 
 settingsInput('pick-folder').addEventListener('click', async () => {
   try {

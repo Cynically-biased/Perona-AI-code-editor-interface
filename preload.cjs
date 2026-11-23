@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('desk', {
   onWindowMaximized: callback => ipcRenderer.on('window-maximized', (_event, maximized) => callback(maximized)),
   onWindowMoved: callback => ipcRenderer.on('window-moved', () => callback()),
   addNewProject: (id, agent, name, preferred) => ipcRenderer.invoke('workspace-add-new-project', id, agent, name, preferred),
+  openProject: (id, agent, name, preferred) => ipcRenderer.invoke('workspace-open-project', id, agent, name, preferred),
   pickSettingsFolder: preferred => ipcRenderer.invoke('settings-pick-folder', preferred),
   setInterfaceZoom: percent => ipcRenderer.invoke('settings-zoom', percent),
   onInterfaceZoomStep: callback => ipcRenderer.on('settings-zoom-step', (_event, direction) => callback(direction)),

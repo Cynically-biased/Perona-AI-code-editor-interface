@@ -23,12 +23,17 @@
 </head>
 <body>
   <header class="toolbar">
-    <h1><img class="brand-portrait" src="perona.png" width="36" height="36" alt="">Perona</h1>
-    <button id="open-monitor" class="app-tool" type="button">Agents</button>
+    <h1><img class="brand-portrait" src="perona.png" width="36" height="36" alt=""><span>Perona</span></h1>
+    <button id="project-menu" class="app-tool" type="button" aria-haspopup="menu" aria-controls="context-menu" aria-expanded="false">Menu <span aria-hidden="true">▾</span></button>
     <button id="open-services" class="app-tool" type="button">Services</button>
     <button id="app-update" class="app-tool" type="button" hidden>Check for updates</button>
-    <button id="app-versions" class="app-tool" type="button" hidden>Versions</button>
     <div class="window-controls" role="group" aria-label="Window controls">
+      <button id="window-settings" class="window-control" type="button" aria-label="Open settings" title="Settings">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true">
+          <path d="M9.8 3h4.4l.6 2.8 1.6.9 2.7-.9 2.2 3.8-2.1 1.9v1.8l2.1 1.9-2.2 3.8-2.7-.9-1.6.9-.6 2.8H9.8l-.6-2.8-1.6-.9-2.7.9-2.2-3.8 2.1-1.9v-1.8L2.7 9.6l2.2-3.8 2.7.9 1.6-.9z"/>
+          <circle cx="12" cy="12" r="3"/>
+        </svg>
+      </button>
       <button id="window-minimize" class="window-control" type="button" aria-label="Minimize window" title="Minimize"><span aria-hidden="true"></span></button>
       <button id="window-maximize" class="window-control" type="button" aria-label="Maximize window" title="Maximize"><span aria-hidden="true"></span></button>
       <button id="window-close" class="window-control" type="button" aria-label="Close window" title="Close"><span aria-hidden="true"></span></button>
@@ -38,9 +43,6 @@
   <div class="workspace">
     <aside class="sidebar" aria-label="Manage chats">
       <div class="sidebar-projects">
-      <button id="preferred-new-project" class="app-settings-button" type="button">New project</button>
-      <button id="clone-project" class="clone-project" type="button">Clone repository</button>
-      <button id="open-settings" class="app-settings-button" type="button">Settings</button>
       <section class="agent" aria-labelledby="codex-heading">
         <header>
           <h2 id="codex-heading"><img src="codex-logo.png" width="22" height="22" alt="">Codex</h2>
@@ -227,11 +229,6 @@
       </div>
     </form>
   </dialog>
-  <dialog id="monitor-dialog" class="tool-dialog" aria-labelledby="monitor-title">
-    <h2 id="monitor-title">Agent sessions</h2>
-    <div id="monitor-list"></div>
-    <form method="dialog"><div class="dialog-actions"><button>Close</button></div></form>
-  </dialog>
   <dialog id="services-dialog" class="tool-dialog" aria-labelledby="services-title">
     <header class="xampp-heading">
       <div><h2 id="services-title">XAMPP Control Panel</h2><p id="xampp-root" class="view-state"></p></div>
@@ -396,6 +393,11 @@
               <option value="check">Check only</option>
               <option value="manual">Check manually</option>
             </select></label>
+            <div class="settings-row" id="settings-version-row" hidden>
+              <span>Earlier versions <small>Download and install an earlier release of Perona.</small></span>
+              <button id="app-versions" class="settings-key" type="button">Versions</button>
+            </div>
+            <p id="settings-version-status" class="settings-help" role="status" hidden></p>
           </section>
         </div>
       </div>

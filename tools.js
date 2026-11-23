@@ -1,4 +1,3 @@
-const monitorDialog = document.querySelector('#monitor-dialog');
 const servicesDialog = document.querySelector('#services-dialog');
 const confirmDialog = document.querySelector('#confirm-dialog');
 const contextMenu = document.querySelector('#context-menu');
@@ -250,38 +249,6 @@ window.desk.onPreview((id, result) => {
   browserMessage(session, result.error ? 'Could not load this site: ' + result.error : '');
 });
 
-function agentStatus(session) {
-  if (session.ended) return 'Ended';
-  if (!session.running) return 'Starting';
-  if (session.view.snapshot.working) return 'Working';
-  return promptReady(session) ? 'Ready' : 'Check Chat';
-}
-
-function renderMonitor() {
-  if (!monitorDialog.open) return;
-  const list = monitorDialog.querySelector('#monitor-list');
-  const records = [...sessions.values()];
-  const signature = JSON.stringify(records.map(session =>
-    [session.id, session.record.name ?? session.chat.title.textContent, session.folder, agentStatus(session)]));
-  if (list.dataset.snapshot === signature) return;
-  list.dataset.snapshot = signature;
-  list.replaceChildren(...records.map(session => {
-    const row = node('div', '', 'tool-row');
-    const info = node('div', '', 'tool-row-info');
-    info.append(node('strong', session.record.name ?? session.chat.title.textContent), node('span', session.folder));
-    const open = node('button', 'Open', 'tool-button');
-    open.type = 'button';
-    open.addEventListener('click', () => {
-      monitorDialog.close();
-      selectChat(session.chat, false);
-      showSession(session.chat, session);
-    });
-    row.append(info, node('span', agentStatus(session), 'tool-status'), open);
-    return row;
-  }));
-  if (!records.length) list.append(node('p', 'No agent sessions are open.', 'view-state'));
-}
-
 const xamppMessage = document.querySelector('#xampp-message');
 const detail = document.querySelector('#xampp-detail');
 const detailTitle = document.querySelector('#xampp-detail-title');
@@ -493,11 +460,6 @@ async function renderServices() {
   }
 }
 
-document.querySelector('#open-monitor').addEventListener('click', () => {
-  monitorDialog.showModal();
-  syncPreview();
-  renderMonitor();
-});
 document.querySelector('#open-services').addEventListener('click', () => {
   servicesDialog.showModal();
   syncPreview();
@@ -506,9 +468,5 @@ document.querySelector('#open-services').addEventListener('click', () => {
 for (const dialog of document.querySelectorAll('dialog')) dialog.addEventListener('close', syncPreview);
 
 setInterval(() => {
-  if (monitorDialog.open) {
-    for (const session of sessions.values()) refreshHistory(session);
-    renderMonitor();
-  }
   if (servicesDialog.open) renderServices();
 }, 1800);

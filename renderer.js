@@ -4,14 +4,18 @@ const counters = { claude: 0, codex: 0 };
 const names = { claude: 'Claude', codex: 'Codex' };
 const updateButton = document.getElementById('app-update');
 const versionsButton = document.getElementById('app-versions');
+const versionRow = document.getElementById('settings-version-row');
+const versionStatus = document.getElementById('settings-version-status');
 const versionDialog = document.getElementById('app-version-dialog');
 const versionChoice = document.getElementById('app-version-choice');
 let updateState;
+let readingVersions = false;
 
 function showAppUpdate({ state, version, downgrade }) {
   updateState = { state, downgrade };
-  updateButton.hidden = versionsButton.hidden = state === 'unavailable';
-  updateButton.disabled = versionsButton.disabled = ['checking', 'downloading', 'installing'].includes(state);
+  updateButton.hidden = versionRow.hidden = state === 'unavailable';
+  updateButton.disabled = ['checking', 'downloading', 'installing'].includes(state);
+  versionsButton.disabled = updateButton.disabled || readingVersions;
   updateButton.textContent = {
     checking: 'Checking…', downloading: downgrade ? 'Downloading v' + version + '…' : 'Downloading update…',
     ready: downgrade ? 'Restart to downgrade' : 'Restart to update',
@@ -23,17 +27,27 @@ function showAppUpdate({ state, version, downgrade }) {
 window.desk.onAppUpdate(showAppUpdate);
 window.desk.appUpdateStatus().then(showAppUpdate).catch(setError);
 versionsButton.addEventListener('click', async () => {
+  if (readingVersions) return;
+  readingVersions = true;
   versionsButton.disabled = true;
+  versionStatus.hidden = false;
+  versionStatus.textContent = 'Loading earlier versions…';
   try {
     const versions = await window.desk.earlierAppVersions();
-    if (document.querySelector('dialog[open]')) return;
+    versionStatus.hidden = true;
+    if (!settingsDialog.open || versionRow.closest('section').hidden
+        || document.querySelector('dialog[open]:not(#settings-dialog)')) return;
     if (!versions.length) throw new Error('No earlier releases with in-app installation files are available.');
     versionChoice.replaceChildren(...versions.map(version => new Option('v' + version, version)));
     versionDialog.returnValue = '';
     versionDialog.showModal();
     syncPreview();
-  } catch (error) { setError(error); }
+  } catch (error) {
+    versionStatus.textContent = readableError(error);
+    versionStatus.hidden = false;
+  }
   finally {
+    readingVersions = false;
     versionsButton.disabled = ['checking', 'downloading', 'installing'].includes(updateState?.state);
   }
 });
@@ -374,7 +388,7 @@ function createChat(agent, id, label, projects = [], selectedId) {
   return chat;
 }
 
-async function openChat(agent, droppedFolder) {
+async function openChat(agent, droppedFolder, chooseFolder = false) {
   if (!workspaceReady) return;
   setError();
   try {
@@ -382,8 +396,9 @@ async function openChat(agent, droppedFolder) {
     const name = names[agent] + ' ' + ++counters[agent];
     const folder = droppedFolder
       ? await window.desk.addDroppedProject(id, agent, name, droppedFolder)
-      : await window.desk.addNewProject(id, agent, name, appPreferences.folder);
-    await openProjectFolder(id, agent, name, folder);
+      : await (chooseFolder ? window.desk.openProject : window.desk.addNewProject)(
+        id, agent, name, appPreferences.folder);
+    if (folder) await openProjectFolder(id, agent, name, folder);
   } catch (error) {
     setError(error);
   }
@@ -412,8 +427,22 @@ function openCloneDialog(agent = appPreferences.agent) {
   syncPreview();
 }
 
-document.getElementById('clone-project').addEventListener('click', () => openCloneDialog());
-document.getElementById('preferred-new-project').addEventListener('click', () => openChat(appPreferences.agent));
+const projectMenu = document.getElementById('project-menu');
+projectMenu.addEventListener('click', event => {
+  if (contextMenu.matches(':popover-open') && menuTrigger === projectMenu) {
+    contextMenu.hidePopover();
+    return;
+  }
+  showContextMenu(event, [
+    ['New project', () => openChat(appPreferences.agent)],
+    ['Open project…', () => openChat(appPreferences.agent, undefined, true)],
+    ['Clone repository…', () => openCloneDialog()],
+    ['Settings', openSettings]
+  ], projectMenu);
+});
+contextMenu.addEventListener('toggle', event => {
+  projectMenu.setAttribute('aria-expanded', String(event.newState === 'open' && menuTrigger === projectMenu));
+});
 document.getElementById('clone-cancel').addEventListener('click', () => cloneDialog.close());
 cloneDialog.addEventListener('cancel', event => {
   if (cloning) event.preventDefault();
@@ -592,11 +621,13 @@ for (const agent of Object.keys(names)) {
   section.addEventListener('toggle', () => localStorage.setItem(key, String(!section.open)));
 }
 
-const usageDate = new Intl.DateTimeFormat(undefined, { weekday: 'short', hour: 'numeric' });
+const usageHour = new Intl.DateTimeFormat(undefined, { weekday: 'short', hour: 'numeric' });
+const usageDay = new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 const usageAmount = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
 
-function usageChart(title, buckets) {
+function usageChart(title, buckets, interval) {
   const chart = node('figure', '', 'usage-chart');
+  const date = interval === 'hour' ? usageHour : usageDay;
   const svg = (tag, attributes) => {
     const element = document.createElementNS('http://www.w3.org/2000/svg', tag);
     for (const [key, value] of Object.entries(attributes)) element.setAttribute(key, value);
@@ -608,7 +639,8 @@ function usageChart(title, buckets) {
     ? [{ used, start, x: 3 + index * slotWidth }] : []);
   const latest = points.at(-1);
   const plot = svg('svg', { viewBox: '0 0 200 39', preserveAspectRatio: 'none', role: 'img',
-    'aria-label': title + ' of account-wide 7-day limit usage. Each bar represents an hourly reading.' });
+    'aria-label': title + ' of account-wide usage. Each bar shows usage added in that ' + interval
+      + ' as a percentage of the seven-day limit.' });
   const high = Math.max(100, Math.ceil(Math.max(0, ...points.map(point => point.used)) / 10) * 10);
   for (const level of [4, 19.5, 35]) {
     plot.append(svg('line', { x1: 3, x2: 197, y1: level, y2: level, class: 'usage-grid' }));
@@ -618,7 +650,7 @@ function usageChart(title, buckets) {
     const bar = svg('rect', { x: point.x + slotWidth * .1, y: 35 - height,
       width: slotWidth * .8, height, class: point === latest ? 'usage-bar latest' : 'usage-bar' });
     const tooltip = svg('title', {});
-    tooltip.textContent = usageDate.format(point.start) + ' · ' + amount(point.used) + ' used';
+    tooltip.textContent = date.format(point.start) + ' · ' + amount(point.used) + ' used in this ' + interval;
     bar.append(tooltip);
     plot.append(bar);
   }
@@ -626,7 +658,7 @@ function usageChart(title, buckets) {
   caption.append(node('strong', title), node('span', latest ? amount(latest.used) + ' used' : 'Collecting readings'));
   const axis = node('div', '', 'usage-axis');
   axis.append(node('span', '0%–' + amount(high) + ' scale'),
-    node('span', latest ? usageDate.format(latest.start) : ''));
+    node('span', latest ? date.format(latest.start) : ''));
   chart.append(caption, plot, axis);
   return chart;
 }
@@ -638,7 +670,8 @@ async function refreshAgentUsage() {
     const { usage, charts } = await window.desk.agentUsage();
     for (const agent of Object.keys(names)) {
       document.getElementById(agent + '-charts').replaceChildren(
-        usageChart('Last 24 hours', charts[agent].daily), usageChart('Last 7 days', charts[agent].weekly));
+        usageChart('Last 24 hours', charts[agent].daily, 'hour'),
+        usageChart('Last 7 days', charts[agent].weekly, 'day'));
       const panel = document.getElementById(agent + '-usage');
       const windows = usage[agent];
       if (!windows.length) {
