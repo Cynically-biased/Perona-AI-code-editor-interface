@@ -7,8 +7,8 @@ const { realpath, stat, writeFile } = require('node:fs/promises');
 const { codexUsage, claudeUsage, claudeUsageSettings } = require('./agent-usage.cjs');
 const { createUsageHistory } = require('./usage-history.cjs');
 const pty = require('node-pty');
-const { createPreview, createWindowCapture } = require('./preview.cjs');
-const { createNativeWindowDock } = require('./native-window.cjs');
+const { createPreview } = require('./preview.cjs');
+const { createNativePlaytest } = require('./native-window.cjs');
 const { createAppUpdates } = require('./app-updates.cjs');
 const { localHosts, suggestPreview } = require('./project-preview.cjs');
 const xampp = require('./xampp.cjs');
@@ -40,8 +40,8 @@ let window;
 let discardWindowEdits = false;
 let workspace;
 let preview;
-let windowCapture;
-let nativeWindowDock;
+let nativePlaytest;
+const playtestExecutables = new Map();
 let previewRequest = 0;
 const appUpdates = createAppUpdates(app.isPackaged && process.platform === 'win32',
   status => send('app-update-status', status), app.getVersion());
@@ -623,11 +623,60 @@ register('git-create-page', provider => {
 });
 
 register('preview-suggest', id => suggestPreview(projectFor(id).cwd));
-register('preview-list-windows', () => windowCapture.list());
-register('preview-select-window', id => windowCapture.select(id));
-register('preview-dock-window', id => nativeWindowDock.start(windowCapture.claim(id).id));
-register('preview-dock-layout', bounds => nativeWindowDock.layout(bounds));
-register('preview-undock-window', () => nativeWindowDock.stop());
+async function projectPlaytestExecutable(folder, selected) {
+  const root = await realpath(folder);
+  const executable = await realpath(selected);
+  const relative = path.relative(root, executable);
+  if (!relative || path.isAbsolute(relative) || relative === '..' || relative.startsWith('..' + path.sep)) {
+    throw new Error('Choose a game executable inside the open project folder.');
+  }
+  if (path.extname(executable).toLowerCase() !== '.exe' || !(await stat(executable)).isFile()) {
+    throw new Error('Choose a Windows game executable (.exe).');
+  }
+  return executable;
+}
+
+async function choosePlaytestExecutable(folder) {
+  if (pickerOpen) return null;
+  pickerOpen = true;
+  try {
+    const { canceled, filePaths: [selected] } = await dialog.showOpenDialog(window, {
+      title: 'Choose a game executable inside this project',
+      defaultPath: playtestExecutables.get(folder) ?? folder,
+      properties: ['openFile'], filters: [{ name: 'Windows executable', extensions: ['exe'] }]
+    });
+    if (canceled || !selected) return null;
+    const executable = await projectPlaytestExecutable(folder, selected);
+    playtestExecutables.set(folder, executable);
+    return executable;
+  } finally {
+    pickerOpen = false;
+  }
+}
+register('preview-choose-playtest', async id => {
+  const executable = await choosePlaytestExecutable(projectFor(id).cwd);
+  return executable && path.basename(executable);
+});
+register('preview-start-playtest', async (id, wait) => {
+  const folder = projectFor(id).cwd;
+  let executable = playtestExecutables.get(folder);
+  if (executable) {
+    try {
+      executable = await projectPlaytestExecutable(folder, executable);
+    } catch (error) {
+      playtestExecutables.delete(folder);
+      if (error.code !== 'ENOENT') throw error;
+      throw new Error('The game executable is missing. Choose another .exe inside this project.');
+    }
+  } else executable = await choosePlaytestExecutable(folder);
+  if (!executable) return null;
+  if (projectFor(id).cwd !== folder) throw new Error('The active project changed before playtest started.');
+  const seconds = Number.isInteger(wait) && wait >= 5 && wait <= 60 ? wait : 12;
+  await nativePlaytest.start(id, executable, path.dirname(executable), seconds);
+  return path.basename(executable);
+});
+register('preview-playtest-layout', (id, bounds) => nativePlaytest.layout(id, bounds));
+register('preview-stop-playtest', id => nativePlaytest.stop(id));
 register('preview-show', async (id, url) => {
   projectFor(id);
   const request = ++previewRequest;
@@ -705,12 +754,11 @@ else app.whenReady().then(() => {
     guest.on('before-input-event', handleInterfaceZoomShortcut);
   });
   preview = createPreview(window, (owner, update) => send('preview-update', owner, update));
-  windowCapture = createWindowCapture(window);
-  nativeWindowDock = createNativeWindowDock(window, () => send('preview-window-ended'));
+  nativePlaytest = createNativePlaytest(window, (id, message) => send('preview-playtest-ended', id, message));
   window.on('close', event => {
-    if (!nativeWindowDock.active) return;
+    if (!nativePlaytest.active) return;
     event.preventDefault();
-    nativeWindowDock.stop().then(() => {
+    nativePlaytest.stop().then(() => {
       if (!window.isDestroyed()) window.close();
     });
   });
@@ -739,9 +787,9 @@ app.on('second-instance', () => {
 app.on('window-all-closed', () => app.quit());
 
 app.on('before-quit', event => {
-  if (!starting.size && !fileOperations.size && !nativeWindowDock?.active) return;
+  if (!starting.size && !fileOperations.size && !nativePlaytest?.active) return;
   event.preventDefault();
-  Promise.allSettled([...starting.values(), ...fileOperations, nativeWindowDock?.stop()]).then(() => app.quit());
+  Promise.allSettled([...starting.values(), ...fileOperations, nativePlaytest?.stop()]).then(() => app.quit());
 });
 app.on('will-quit', () => {
   for (const id of projectShells.keys()) closeProjectShell(id);

@@ -24,7 +24,8 @@
 <body>
   <header class="toolbar">
     <h1><img class="brand-portrait" src="perona.png" width="36" height="36" alt=""><span>Perona</span></h1>
-    <button id="project-menu" class="app-tool" type="button" popovertarget="context-menu" aria-haspopup="menu" aria-controls="context-menu" aria-expanded="false">Menu</button>
+    <button id="project-menu" class="app-tool" data-toolbar-menu type="button" popovertarget="context-menu" aria-haspopup="menu" aria-controls="context-menu" aria-expanded="false">Menu</button>
+    <button id="games-menu" class="app-tool" data-toolbar-menu type="button" popovertarget="context-menu" aria-haspopup="menu" aria-controls="context-menu" aria-expanded="false">Games</button>
     <button id="open-services" class="app-tool" type="button">Services</button>
     <button id="app-update" class="app-tool" type="button" hidden>Check for updates</button>
     <div class="window-controls" role="group" aria-label="Window controls">
@@ -208,11 +209,12 @@
             <button type="submit" class="browser-play" title="Play a browser build in Preview">Play</button>
             <button type="button" class="browser-stop" hidden>Stop game</button>
             <button type="button" class="browser-project">Use project URL</button>
-            <button type="button" class="preview-window">Live window…</button>
-            <button type="button" class="preview-stop" hidden>Stop preview</button>
+            <button type="button" class="desktop-play">Play desktop game</button>
+            <button type="button" class="desktop-choose">Choose game…</button>
+            <button type="button" class="desktop-stop" hidden>Stop desktop game</button>
           </form>
           <p class="browser-message" role="status" hidden></p>
-          <div class="browser-surface"><video class="preview-video" aria-label="Live window preview" autoplay muted playsinline hidden></video></div>
+          <div class="browser-surface"></div>
         </section>
         <section class="project-view project-shell terminal-background" data-panel="terminal" aria-label="Project terminal" inert>
           <div class="view-heading">
@@ -279,28 +281,6 @@
     </li>
   </template>
   <webview id="local-preview" src="about:blank" partition="perona-local-preview" hidden></webview>
-  <dialog id="preview-window-dialog" aria-labelledby="preview-window-title">
-    <form method="dialog">
-      <header class="preview-picker-header">
-        <span class="preview-picker-icon" aria-hidden="true"></span>
-        <div>
-          <h2 id="preview-window-title">Live Window Preview</h2>
-          <p>Choose a running app or game.</p>
-        </div>
-      </header>
-      <div class="preview-picker-body">
-        <label for="preview-window-choice">Open windows</label>
-        <select id="preview-window-choice" required disabled aria-describedby="preview-window-help"></select>
-        <p id="preview-window-status" role="status"></p>
-        <p id="preview-window-help">Play inside Perona to interact with a compatible window, or choose Watch live to view it.</p>
-      </div>
-      <div class="dialog-actions">
-        <button class="preview-picker-cancel" type="button">Cancel</button>
-        <button value="start" disabled>Watch live</button>
-        <button value="play" disabled>Play inside Perona</button>
-      </div>
-    </form>
-  </dialog>
   <div id="perona-pet" class="perona-pet">
     <canvas width="66" height="51" aria-hidden="true"></canvas>
     <button class="perona-pet-hit" type="button" aria-label="Chibi Perona actions"
@@ -360,7 +340,7 @@
           <button type="button" data-settings-category="terminal">Terminal</button>
           <button type="button" data-settings-category="projects">Projects</button>
           <button type="button" data-settings-category="keybindings">Shortcuts</button>
-          <button type="button" data-settings-category="preview">Preview</button>
+          <button type="button" data-settings-category="games">Games</button>
           <button type="button" data-settings-category="updates">Updates</button>
         </nav>
         <div class="settings-content">
@@ -416,17 +396,14 @@
             <p id="settings-shortcut-status" role="status"></p>
             <div id="settings-shortcut-list"></div>
           </section>
-          <section data-settings-panel="preview" aria-labelledby="settings-preview-heading" hidden>
-            <h3 id="settings-preview-heading">Preview</h3>
+          <section data-settings-panel="games" aria-labelledby="settings-games-heading" hidden>
+            <h3 id="settings-games-heading">Games</h3>
             <label class="settings-row">
-              <span>Default Live Window action <small>Choose the primary action in the window picker.</small></span>
-              <select id="settings-window-preview-action">
-                <option value="watch">Watch live</option>
-                <option value="play">Play inside Perona</option>
-              </select>
+              <span>Desktop game startup wait <small>Seconds to wait for the game window before ending the playtest.</small></span>
+              <input id="settings-playtest-wait" type="number" min="5" max="60" step="1" required>
             </label>
             <label class="settings-row">
-              <span>Keep window docked when switching tabs <small>The window is hidden until you return to Preview. Switching projects restores it to its own window.</small></span>
+              <span>Keep playtest running when switching tabs <small>The game is hidden until you return to Preview. Switching projects stops the playtest.</small></span>
               <input id="settings-keep-window-docked" type="checkbox">
             </label>
           </section>

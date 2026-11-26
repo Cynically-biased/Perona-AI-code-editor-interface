@@ -86,7 +86,7 @@ document.addEventListener('drop', releaseDragItem, true);
 function showContextMenu(event, actions, trigger = event.currentTarget, { hover = false } = {}) {
   event.preventDefault();
   event.stopPropagation();
-  if (menuTrigger !== trigger && menuTrigger?.id === 'project-menu') {
+  if (menuTrigger !== trigger && menuTrigger?.hasAttribute('data-toolbar-menu')) {
     menuTrigger.setAttribute('aria-expanded', 'false');
   }
   menuTrigger = trigger;
@@ -108,7 +108,7 @@ function showContextMenu(event, actions, trigger = event.currentTarget, { hover 
     return button;
   });
   contextMenu.replaceChildren(...buttons);
-  contextMenu.classList.toggle('project-dropdown', trigger.id === 'project-menu');
+  contextMenu.classList.toggle('project-dropdown', trigger.hasAttribute('data-toolbar-menu'));
   if (!contextMenu.matches(':popover-open')) contextMenu.showPopover({ source: trigger });
   contextMenu.style.left = Math.max(4, Math.min(x, innerWidth - contextMenu.offsetWidth - 4)) + 'px';
   contextMenu.style.top = Math.max(4, Math.min(y, innerHeight - contextMenu.offsetHeight - 4)) + 'px';
@@ -152,16 +152,8 @@ async function confirmAction(title, message, action, cancel = 'Cancel') {
 let visiblePreview;
 let playingPreview;
 const previewGuest = document.getElementById('local-preview');
-const windowPreviewDialog = document.getElementById('preview-window-dialog');
-const windowPreviewChoice = document.getElementById('preview-window-choice');
-const windowPreviewStatus = document.getElementById('preview-window-status');
-const windowPreviewStart = windowPreviewDialog.querySelector('[value="start"]');
-const windowPreviewPlay = windowPreviewDialog.querySelector('[value="play"]');
-const windowPreviewCancel = windowPreviewDialog.querySelector('.preview-picker-cancel');
-windowPreviewCancel.addEventListener('click', () => windowPreviewDialog.close());
-let windowPreviewPicker;
-let liveWindowPreview;
-let nativeUndocking;
+let desktopPlaytest;
+let playtestStopping;
 let servicesReading = false;
 
 function hidePreview() {
@@ -192,107 +184,58 @@ function stopBrowserGame(session) {
   browserMessage(session, 'Game stopped. Select Play to start it again.');
 }
 
-function stopWindowPreview(session) {
-  if (liveWindowPreview?.session !== session) return;
-  const { stream, native } = liveWindowPreview;
-  liveWindowPreview = undefined;
-  if (native) nativeUndocking = window.desk.previewUndockWindow().catch(setError);
-  for (const track of stream?.getTracks() ?? []) track.stop();
+function updateDesktopPlaytestControls(session, active) {
   const panel = session.view.previewPanel;
-  const video = panel.querySelector('.preview-video');
-  video.srcObject = null;
-  video.hidden = true;
-  panel.querySelector('.preview-stop').hidden = true;
+  panel.querySelector('.desktop-play').hidden = active;
+  panel.querySelector('.desktop-choose').disabled = active;
+  panel.querySelector('.desktop-stop').hidden = !active;
+}
+
+function stopDesktopPlaytest(session) {
+  if (desktopPlaytest?.session !== session) return;
+  desktopPlaytest = undefined;
+  playtestStopping = window.desk.previewStopPlaytest(session.id).catch(setError);
+  updateDesktopPlaytestControls(session, false);
   browserMessage(session, '');
 }
 
-async function openWindowPreviewPicker(session) {
-  const picker = { session };
-  windowPreviewPicker = picker;
-  const primary = appPreferences.windowPreviewAction === 'play' ? windowPreviewPlay : windowPreviewStart;
-  windowPreviewCancel.after(primary);
-  windowPreviewStart.toggleAttribute('data-primary', primary === windowPreviewStart);
-  windowPreviewPlay.toggleAttribute('data-primary', primary === windowPreviewPlay);
-  windowPreviewChoice.disabled = windowPreviewStart.disabled = windowPreviewPlay.disabled = true;
-  windowPreviewChoice.replaceChildren();
-  windowPreviewStatus.textContent = 'Finding open windows…';
-  windowPreviewDialog.showModal();
-  syncPreview();
+async function startDesktopPlaytest(session) {
+  if (desktopPlaytest) return;
+  stopBrowserGame(session);
+  const run = { session };
+  desktopPlaytest = run;
+  hidePreview();
+  updateDesktopPlaytestControls(session, true);
+  browserMessage(session, 'Starting desktop playtest…');
   try {
-    const windows = await window.desk.previewListWindows();
-    if (windowPreviewPicker !== picker || !windowPreviewDialog.open) return;
-    windowPreviewChoice.replaceChildren(...windows.map(({ id, name }) => new Option(name || 'Untitled window', id)));
-    windowPreviewStatus.textContent = windows.length ? '' : 'Open the app or game in its own window first.';
-    windowPreviewChoice.disabled = windowPreviewStart.disabled = windowPreviewPlay.disabled = windows.length === 0;
+    if (playtestStopping) await playtestStopping;
+    if (desktopPlaytest !== run) return;
+    const name = await window.desk.previewStartPlaytest(session.id, appPreferences.playtestWait);
+    if (desktopPlaytest !== run) return;
+    if (!name) {
+      stopDesktopPlaytest(session);
+      syncPreview();
+      return;
+    }
+    run.ready = true;
+    browserMessage(session, 'Playing · ' + name);
+    syncPreview();
   } catch (error) {
-    if (windowPreviewPicker === picker) windowPreviewStatus.textContent = readableError(error);
+    if (desktopPlaytest !== run) return;
+    stopDesktopPlaytest(session);
+    syncPreview();
+    browserMessage(session, 'Could not start desktop playtest. ' + readableError(error));
   }
 }
 
-windowPreviewDialog.querySelector('form').addEventListener('submit', async event => {
-  const native = event.submitter === windowPreviewPlay;
-  if (!native && event.submitter !== windowPreviewStart) return;
-  event.preventDefault();
-  if (windowPreviewStart.disabled || !windowPreviewPicker) return;
-  const { session } = windowPreviewPicker;
-  const id = windowPreviewChoice.value;
-  const title = windowPreviewChoice.selectedOptions[0].textContent;
-  windowPreviewChoice.disabled = windowPreviewStart.disabled = windowPreviewPlay.disabled = true;
-  if (liveWindowPreview) stopWindowPreview(liveWindowPreview.session);
-  stopBrowserGame(session);
-  const capture = { session, native };
-  liveWindowPreview = capture;
-  windowPreviewDialog.close();
-  hidePreview();
-  browserMessage(session, native ? 'Docking window…' : 'Starting live preview…');
-  const stop = session.view.previewPanel.querySelector('.preview-stop');
-  stop.textContent = native ? 'Stop playing' : 'Stop preview';
-  stop.hidden = false;
-  try {
-    if (nativeUndocking) await nativeUndocking;
-    if (liveWindowPreview !== capture) return;
-    if (native) {
-      await window.desk.previewDockWindow(id);
-      if (liveWindowPreview !== capture) return;
-      capture.ready = true;
-      browserMessage(session, 'Playing · ' + title);
-      syncPreview();
-      return;
-    }
-    await window.desk.previewSelectWindow(id);
-    if (liveWindowPreview !== capture) return;
-    const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
-    if (liveWindowPreview !== capture) {
-      for (const track of stream.getTracks()) track.stop();
-      return;
-    }
-    capture.stream = stream;
-    stream.getVideoTracks()[0].addEventListener('ended', () => {
-      if (liveWindowPreview !== capture) return;
-      stopWindowPreview(session);
-      syncPreview();
-      browserMessage(session, 'The captured window is no longer available.');
-    }, { once: true });
-    const video = session.view.previewPanel.querySelector('.preview-video');
-    video.srcObject = stream;
-    video.hidden = false;
-    browserMessage(session, 'Live · ' + title);
-  } catch (error) {
-    if (liveWindowPreview !== capture) return;
-    stopWindowPreview(session);
-    syncPreview();
-    browserMessage(session, (native ? 'Could not dock this window. ' : 'Could not start live preview. ')
-      + readableError(error));
-  }
+window.desk.onPreviewPlaytestEnded((id, message) => {
+  if (desktopPlaytest?.session.id !== id) return;
+  const { session } = desktopPlaytest;
+  stopDesktopPlaytest(session);
+  syncPreview();
+  browserMessage(session, message);
 });
 
-window.desk.onPreviewWindowEnded(() => {
-  if (!liveWindowPreview?.native) return;
-  const { session } = liveWindowPreview;
-  stopWindowPreview(session);
-  syncPreview();
-  browserMessage(session, 'The docked window is no longer available.');
-});
 
 function syncPreview() {
   const session = activeChat?.projects.get(activeChat.selectedId);
@@ -300,14 +243,14 @@ function syncPreview() {
   if (playingPreview && (!previewVisible || playingPreview.session !== session)) {
     stopBrowserGame(playingPreview.session);
   }
-  if (liveWindowPreview && (liveWindowPreview.session !== session
-      || (!previewVisible && !(liveWindowPreview.native && appPreferences.keepWindowDocked)))) {
-    stopWindowPreview(liveWindowPreview.session);
+  if (desktopPlaytest && (desktopPlaytest.session !== session
+      || (!previewVisible && !(appPreferences.keepWindowDocked)))) {
+    stopDesktopPlaytest(desktopPlaytest.session);
   }
   const anyDialog = document.querySelector('dialog[open]');
   const obscured = !previewVisible || anyDialog || liftedDrag || session.dock.busy
     || session.dock.root.querySelector('.dock-controls[open]');
-  if (liveWindowPreview?.native && liveWindowPreview.ready) {
+  if (desktopPlaytest?.ready) {
     let bounds = null;
     if (!obscured && !contextMenu.matches(':popover-open')) {
       const { left, top, right, bottom } = session.view.surface.getBoundingClientRect();
@@ -319,12 +262,12 @@ function syncPreview() {
       }
     }
     const layoutKey = JSON.stringify(bounds);
-    if (liveWindowPreview.layoutKey !== layoutKey) {
-      liveWindowPreview.layoutKey = layoutKey;
-      window.desk.previewDockLayout(bounds).catch(setError);
+    if (desktopPlaytest.layoutKey !== layoutKey) {
+      desktopPlaytest.layoutKey = layoutKey;
+      window.desk.previewPlaytestLayout(session.id, bounds).catch(setError);
     }
   }
-  if (obscured || session.view.browserStopped || liveWindowPreview) {
+  if (obscured || session.view.browserStopped || desktopPlaytest) {
     hidePreview();
     return;
   }
@@ -365,12 +308,12 @@ async function detectPreview(session, replace = false) {
     if (!replace && (view.previewUrl !== previous || view.previewUrl !== undefined)) return;
     view.previewUrl = url ?? '';
     view.previewPanel.querySelector('.browser-url').value = view.previewUrl;
-    if (liveWindowPreview?.session !== session) browserMessage(session, '');
+    if (desktopPlaytest?.session !== session) browserMessage(session, '');
     syncPreview();
   } catch (error) {
     if (playingPreview?.session === session || view.browserStopped) return;
     view.previewUrl ??= '';
-    if (liveWindowPreview?.session !== session) browserMessage(session, readableError(error));
+    if (desktopPlaytest?.session !== session) browserMessage(session, readableError(error));
   } finally {
     view.previewDetecting = false;
   }
@@ -385,7 +328,7 @@ function configureTools(session) {
   const stopGame = toolbar.querySelector('.browser-stop');
   view.surface = view.previewPanel.querySelector('.browser-surface');
   toolbar.querySelector('.browser-project').addEventListener('click', () => {
-    stopWindowPreview(session);
+    stopDesktopPlaytest(session);
     stopBrowserGame(session);
     view.browserStopped = false;
     detectPreview(session, true);
@@ -395,9 +338,15 @@ function configureTools(session) {
     stopBrowserGame(session);
     play.focus();
   });
-  toolbar.querySelector('.preview-window').addEventListener('click', () => openWindowPreviewPicker(session));
-  toolbar.querySelector('.preview-stop').addEventListener('click', () => {
-    stopWindowPreview(session);
+  toolbar.querySelector('.desktop-play').addEventListener('click', () => startDesktopPlaytest(session));
+  toolbar.querySelector('.desktop-choose').addEventListener('click', async () => {
+    try {
+      const name = await window.desk.previewChoosePlaytest(session.id);
+      if (name && sessions.get(session.id) === session) browserMessage(session, 'Desktop game selected · ' + name);
+    } catch (error) { browserMessage(session, readableError(error)); }
+  });
+  toolbar.querySelector('.desktop-stop').addEventListener('click', () => {
+    stopDesktopPlaytest(session);
     syncPreview();
   });
   view.previewObserver = new ResizeObserver(() => {
@@ -408,7 +357,7 @@ function configureTools(session) {
     event.preventDefault();
     const url = address.value.trim();
     if (!url) return;
-    stopWindowPreview(session);
+    stopDesktopPlaytest(session);
     stopBrowserGame(session);
     view.browserStopped = false;
     view.previewUrl = address.value = url;
@@ -423,12 +372,12 @@ function configureTools(session) {
     if (event.submitter === play && visiblePreview === session) previewGuest.focus();
   });
   toolbar.querySelector('.browser-refresh').addEventListener('click', () => {
-    if (view.browserStopped || liveWindowPreview?.session === session) return;
+    if (view.browserStopped || desktopPlaytest?.session === session) return;
     browserMessage(session, '');
     window.desk.previewReload(session.id).catch(setError);
   });
   toolbar.querySelector('.browser-back').addEventListener('click', () => {
-    if (view.browserStopped || liveWindowPreview?.session === session) return;
+    if (view.browserStopped || desktopPlaytest?.session === session) return;
     browserMessage(session, '');
     window.desk.previewBack(session.id).catch(setError);
   });
@@ -441,7 +390,7 @@ window.desk.onPreview((id, result) => {
     session.view.previewUrl = result.url;
     session.view.previewPanel.querySelector('.browser-url').value = result.url;
   }
-  if (liveWindowPreview?.session !== session) {
+  if (desktopPlaytest?.session !== session) {
     browserMessage(session, result.error ? 'Could not load this site: ' + result.error : '');
   }
 });

@@ -8,6 +8,7 @@ Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+using System.Threading;
 
 public static class PeronaDock {
     [StructLayout(LayoutKind.Sequential)]
@@ -30,19 +31,38 @@ public static class PeronaDock {
     [DllImport("user32.dll", SetLastError=true)] static extern IntPtr SetParent(IntPtr child, IntPtr parent);
     [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr h, IntPtr order, int x, int y, int w, int height, uint flags);
     [DllImport("user32.dll")] static extern bool ShowWindowAsync(IntPtr h, int command);
+    delegate bool WindowVisitor(IntPtr handle, IntPtr state);
+    [DllImport("user32.dll")] static extern bool EnumWindows(WindowVisitor visitor, IntPtr state);
+
+    public static long FindWindow(uint pid, int waitSeconds, Task<string> input) {
+        for (int attempt = 0; attempt < waitSeconds * 10 && !input.IsCompleted; attempt++) {
+            IntPtr found = IntPtr.Zero;
+            EnumWindows((handle, state) => {
+                if (!SameWindow(handle, pid) || !IsWindowVisible(handle) || GetWindow(handle, 4) != IntPtr.Zero) return true;
+                Rect area;
+                if (!GetClientRect(handle, out area) || area.Right < 100 || area.Bottom < 100) return true;
+                found = handle;
+                return false;
+            }, IntPtr.Zero);
+            if (found != IntPtr.Zero) return found.ToInt64();
+            Thread.Sleep(100);
+        }
+        throw new InvalidOperationException("The game did not open a compatible window. Select the game executable directly and run it in windowed mode.");
+    }
 
     static bool SameWindow(IntPtr handle, uint pid) {
         uint current;
         return IsWindow(handle) && GetWindowThreadProcessId(handle, out current) != 0 && current == pid;
     }
 
-    public static void Run(long childId, long parentId) {
-        var child = new IntPtr(childId);
+    public static void Run(uint gamePid, long parentId, int waitSeconds) {
+        var input = Task.Run(() => Console.ReadLine());
+        var child = new IntPtr(FindWindow(gamePid, waitSeconds, input));
         var parent = new IntPtr(parentId);
         uint childPid, parentPid;
         GetWindowThreadProcessId(child, out childPid);
         GetWindowThreadProcessId(parent, out parentPid);
-        if (childPid == 0 || parentPid == 0 || childPid == parentPid ||
+        if (childPid != gamePid || parentPid == 0 || childPid == parentPid ||
             GetAncestor(child, 2) != child || GetWindow(child, 4) != IntPtr.Zero ||
             !IsWindowVisible(child) || IsIconic(child) || IsZoomed(child))
             throw new InvalidOperationException("Choose a visible, restored app or game window.");
@@ -66,12 +86,12 @@ public static class PeronaDock {
             ShowWindowAsync(child, 0);
             Console.WriteLine("READY");
             while (SameWindow(child, childPid) && SameWindow(parent, parentPid)) {
-                var input = Task.Run(() => Console.ReadLine());
                 while (!input.Wait(250)) {
                     if (!SameWindow(child, childPid) || !SameWindow(parent, parentPid)) return;
                 }
                 var line = input.Result;
                 if (line == null) break;
+                input = Task.Run(() => Console.ReadLine());
                 if (line == "hide") {
                     ShowWindowAsync(child, 0);
                     continue;
@@ -98,7 +118,7 @@ public static class PeronaDock {
     }
 }
 '@
-try { [PeronaDock]::Run($childId, $parentId) }
+try { [PeronaDock]::Run($gamePid, $parentId, $waitSeconds) }
 catch { [Console]::WriteLine('ERROR ' + $_.Exception.GetBaseException().Message); exit 1 }
 `;
 
@@ -114,12 +134,11 @@ function createNativeWindowDock(window, notify) {
   return {
     get active() { return Boolean(active); },
     stop,
-    start(id) {
+    start(pid, waitSeconds) {
       if (active) throw new Error('Wait for the previous window to undock.');
-      const match = /^window:(-?\d+):\d+$/.exec(id);
-      if (!match) throw new Error('The selected window cannot be docked.');
+      if (!Number.isInteger(pid) || pid <= 0) throw new Error('The game process could not be started.');
       const handle = window.getNativeWindowHandle().readBigInt64LE();
-      const command = '$childId=' + BigInt(match[1]) + ';$parentId=' + handle + '\n' + script;
+      const command = '$gamePid=' + pid + ';$parentId=' + handle + ';$waitSeconds=' + waitSeconds + '\n' + script;
       const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand',
         Buffer.from(command, 'utf16le').toString('base64')], { windowsHide: true });
       const dock = { child, stopping: false };
@@ -155,4 +174,58 @@ function createNativeWindowDock(window, notify) {
   };
 }
 
-module.exports = { createNativeWindowDock };
+function createNativePlaytest(window, notify) {
+  let active;
+  const dock = createNativeWindowDock(window, () => finish(active, 'The game window closed.'));
+
+  function finish(run, message) {
+    if (!run || active !== run) return;
+    if (!run.stopping) {
+      run.stopping = (async () => {
+        try {
+          await dock.stop();
+        } finally {
+          if (run.game.exitCode === null && !run.game.signalCode) run.game.kill();
+          await run.closed;
+          if (active === run) active = undefined;
+          if (message) notify(run.id, message);
+        }
+      })();
+    }
+    return run.stopping;
+  }
+
+  return {
+    get active() { return Boolean(active); },
+    async start(id, executable, cwd, waitSeconds = 12) {
+      if (active) throw new Error('Stop the current desktop playtest first.');
+      const game = spawn(executable, [], { cwd, stdio: 'ignore', windowsHide: false });
+      const run = { id, game, closed: new Promise(resolve => game.once('close', resolve)) };
+      active = run;
+      game.on('error', () => {});
+      game.once('exit', () => { if (run.ready) finish(run, 'The game exited.'); });
+      try {
+        if (!game.pid) await new Promise((resolve, reject) => {
+          game.once('spawn', resolve);
+          game.once('error', reject);
+        });
+        if (run.stopping) return;
+        await dock.start(game.pid, waitSeconds);
+        if (run.stopping) return;
+        if (game.exitCode !== null || game.signalCode) throw new Error('The game exited before preview was ready.');
+        run.ready = true;
+      } catch (error) {
+        await finish(run);
+        throw error;
+      }
+    },
+    layout(id, bounds) {
+      if (active?.id === id) dock.layout(bounds);
+    },
+    stop(id) {
+      if (id === undefined || active?.id === id) return finish(active);
+    }
+  };
+}
+
+module.exports = { createNativePlaytest };

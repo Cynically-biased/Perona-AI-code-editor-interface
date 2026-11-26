@@ -1,7 +1,7 @@
 const appPreferences = {
   editorFont: 13, tabWidth: 4, wrap: false, minimap: false,
   startup: 'resume', agent: 'codex', folder: '', updates: 'download', zoom: 100, shortcuts: {},
-  windowPreviewAction: 'watch', keepWindowDocked: false
+  keepWindowDocked: false, playtestWait: 12
 };
 try {
   Object.assign(appPreferences, JSON.parse(localStorage.getItem('perona-settings')) ?? {});
@@ -182,7 +182,7 @@ function openSettings() {
   settingsInput('usage-visible').checked = localStorage.getItem('perona-hide-usage') !== 'true';
   for (const [id, key] of Object.entries({
     'editor-font': 'editorFont', 'editor-tabs': 'tabWidth', startup: 'startup', agent: 'agent',
-    folder: 'folder', updates: 'updates', zoom: 'zoom', 'window-preview-action': 'windowPreviewAction'
+    folder: 'folder', updates: 'updates', zoom: 'zoom', 'playtest-wait': 'playtestWait'
   })) settingsInput(id).value = appPreferences[key];
   settingsInput('keep-window-docked').checked = appPreferences.keepWindowDocked;
   settingsInput('editor-wrap').checked = appPreferences.wrap;
@@ -263,8 +263,8 @@ settingsDialog.addEventListener('close', () => {
     folder: settingsInput('folder').value,
     updates: settingsInput('updates').value,
     zoom: Number(settingsInput('zoom').value),
-    windowPreviewAction: settingsInput('window-preview-action').value,
     keepWindowDocked: settingsInput('keep-window-docked').checked,
+    playtestWait: settingsInput('playtest-wait').valueAsNumber,
     shortcuts: shortcutDraft
   });
   localStorage.setItem('perona-settings', JSON.stringify(appPreferences));

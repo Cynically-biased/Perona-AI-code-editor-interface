@@ -146,7 +146,7 @@ function setError(error) {
 
 function removeSession(session) {
   stopBrowserGame(session);
-  stopWindowPreview(session);
+  stopDesktopPlaytest(session);
   sessions.delete(session.id);
   session.disposeChatInput?.();
   session.observer.disconnect();
@@ -430,59 +430,93 @@ function openCloneDialog(agent = appPreferences.agent) {
 }
 
 const projectMenu = document.getElementById('project-menu');
-let projectMenuPinned = false;
-let projectMenuLeave;
-const projectMenuOpen = () => contextMenu.matches(':popover-open') && menuTrigger === projectMenu;
-function showProjectMenu(event, hover = false) {
-  showContextMenu(event, [
+const gamesMenu = document.getElementById('games-menu');
+const currentProject = () => activeChat?.projects.get(activeChat.selectedId);
+const toolbarMenus = new Map([
+  [projectMenu, () => [
     ['New project', () => openChat(appPreferences.agent)],
     ['Open project…', () => openChat(appPreferences.agent, undefined, true)],
     ['Clone repository…', () => openCloneDialog()],
     ['Save', () => {
-      const project = activeChat?.projects.get(activeChat.selectedId);
+      const project = currentProject();
       if (project) return saveProjectFiles([project]);
     }],
     ['Save All', () => saveProjectFiles([...sessions.values()].filter(session => !session.extra))],
     ['Settings', openSettings]
-  ], projectMenu, { hover });
-  projectMenu.setAttribute('aria-expanded', 'true');
-}
+  ]],
+  [gamesMenu, () => {
+    const project = currentProject();
+    const actions = [];
+    if (project) {
+      const previewAction = selector => () => {
+        showView(project, 'preview');
+        project.view.previewPanel.querySelector(selector).click();
+      };
+      actions.push(['Open Preview', () => showView(project, 'preview')]);
+      if (desktopPlaytest?.session === project) {
+        actions.push(['Stop desktop game', () => { stopDesktopPlaytest(project); syncPreview(); }]);
+      } else {
+        actions.push(['Play desktop game', previewAction('.desktop-play')],
+          ['Choose game executable…', previewAction('.desktop-choose')]);
+      }
+      if (playingPreview?.session === project) {
+        actions.push(['Stop browser game', previewAction('.browser-stop')]);
+      } else actions.push(['Play browser game', previewAction('.browser-play')]);
+    } else actions.push(['Open project…', () => openChat(appPreferences.agent, undefined, true)]);
+    actions.push(['Game settings', () => { openSettings(); showSettingsCategory('games'); }]);
+    return actions;
+  }]
+]);
 
-function closeProjectMenuAfterHover() {
-  clearTimeout(projectMenuLeave);
-  if (!projectMenuOpen() || projectMenuPinned) return;
-  projectMenuLeave = setTimeout(() => {
-    if (projectMenuOpen() && !projectMenuPinned && !projectMenu.matches(':hover')
+let pinnedMenu;
+let toolbarMenuLeave;
+const toolbarMenuOpen = trigger => menuTrigger === trigger && contextMenu.matches(':popover-open');
+
+function closeToolbarMenuAfterHover() {
+  clearTimeout(toolbarMenuLeave);
+  const trigger = menuTrigger;
+  if (!toolbarMenus.has(trigger) || !toolbarMenuOpen(trigger) || pinnedMenu === trigger) return;
+  toolbarMenuLeave = setTimeout(() => {
+    if (toolbarMenuOpen(trigger) && pinnedMenu !== trigger && !trigger.matches(':hover')
         && !contextMenu.matches(':hover, :focus-within')) contextMenu.hidePopover();
   }, 160);
 }
 
-projectMenu.addEventListener('pointerenter', event => {
-  if (event.pointerType !== 'mouse') return;
-  clearTimeout(projectMenuLeave);
-  if (!projectMenuOpen()) {
-    projectMenuPinned = false;
-    showProjectMenu(event, true);
-  }
-});
-projectMenu.addEventListener('pointerleave', closeProjectMenuAfterHover);
-contextMenu.addEventListener('pointerenter', () => clearTimeout(projectMenuLeave));
-contextMenu.addEventListener('pointerleave', closeProjectMenuAfterHover);
-projectMenu.addEventListener('click', event => {
-  event.preventDefault();
-  clearTimeout(projectMenuLeave);
-  if (projectMenuOpen() && projectMenuPinned) {
-    contextMenu.hidePopover();
-    return;
-  }
-  projectMenuPinned = true;
-  if (!projectMenuOpen()) showProjectMenu(event);
-  else if (event.detail === 0) contextMenu.firstElementChild?.focus();
-});
+for (const [trigger, actions] of toolbarMenus) {
+  const show = (event, hover = false) => {
+    showContextMenu(event, actions(), trigger, { hover });
+    trigger.setAttribute('aria-expanded', 'true');
+  };
+  trigger.addEventListener('pointerenter', event => {
+    if (event.pointerType !== 'mouse') return;
+    clearTimeout(toolbarMenuLeave);
+    if (!toolbarMenuOpen(trigger)) {
+      pinnedMenu = undefined;
+      show(event, true);
+    }
+  });
+  trigger.addEventListener('pointerleave', closeToolbarMenuAfterHover);
+  trigger.addEventListener('click', event => {
+    event.preventDefault();
+    clearTimeout(toolbarMenuLeave);
+    if (toolbarMenuOpen(trigger) && pinnedMenu === trigger) {
+      contextMenu.hidePopover();
+      return;
+    }
+    pinnedMenu = trigger;
+    if (!toolbarMenuOpen(trigger)) show(event);
+    else if (event.detail === 0) contextMenu.firstElementChild?.focus();
+  });
+}
+contextMenu.addEventListener('pointerenter', () => clearTimeout(toolbarMenuLeave));
+contextMenu.addEventListener('pointerleave', closeToolbarMenuAfterHover);
 contextMenu.addEventListener('beforetoggle', event => {
-  if (event.newState === 'closed') projectMenuPinned = false;
-  projectMenu.setAttribute('aria-expanded', String(event.newState === 'open' && menuTrigger === projectMenu));
+  if (event.newState === 'closed') {
+    pinnedMenu = undefined;
+    if (toolbarMenus.has(menuTrigger)) menuTrigger.setAttribute('aria-expanded', 'false');
+  }
 });
+
 document.getElementById('clone-cancel').addEventListener('click', () => cloneDialog.close());
 cloneDialog.addEventListener('cancel', event => {
   if (cloning) event.preventDefault();

@@ -1,40 +1,4 @@
-const { desktopCapturer, session } = require('electron');
-
-function createWindowCapture(window) {
-  let sources = new Map();
-  let selected;
-  function claim(id) {
-    const source = sources.get(id);
-    sources.clear();
-    if (!source) throw new Error('Choose a window from the current list.');
-    return source;
-  }
-  window.webContents.session.setDisplayMediaRequestHandler((request, callback) => {
-    const choice = selected;
-    selected = undefined;
-    if (request.frame !== window.webContents.mainFrame || !request.userGesture
-        || !request.videoRequested || request.audioRequested || !choice || Date.now() > choice.expires) {
-      callback({});
-      return;
-    }
-    callback({ video: choice.source });
-  });
-  return {
-    async list() {
-      selected = undefined;
-      const ownWindow = window.getMediaSourceId().split(':').slice(0, 2).join(':');
-      const windows = await desktopCapturer.getSources({ types: ['window'], thumbnailSize: { width: 0, height: 0 } });
-      sources = new Map(windows.filter(source => source.id.startsWith('window:')
-        && source.id.split(':').slice(0, 2).join(':') !== ownWindow).map(source => [source.id, source]));
-      return [...sources.values()].map(({ id, name }) => ({ id, name }));
-    },
-    select(id) {
-      selected = undefined;
-      selected = { source: claim(id), expires: Date.now() + 5000 };
-    },
-    claim
-  };
-}
+const { session } = require('electron');
 
 function localUrl(input, hosts) {
   if (typeof input !== 'string' || input.length > 2048) throw new Error('Enter a localhost address.');
@@ -134,4 +98,4 @@ function createPreview(window, notify) {
   };
 }
 
-module.exports = { createPreview, createWindowCapture };
+module.exports = { createPreview };
