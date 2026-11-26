@@ -1,6 +1,7 @@
 const appPreferences = {
   editorFont: 13, tabWidth: 4, wrap: false, minimap: false,
-  startup: 'resume', agent: 'codex', folder: '', updates: 'download', zoom: 100, shortcuts: {}
+  startup: 'resume', agent: 'codex', folder: '', updates: 'download', zoom: 100, shortcuts: {},
+  windowPreviewAction: 'watch', keepWindowDocked: false
 };
 try {
   Object.assign(appPreferences, JSON.parse(localStorage.getItem('perona-settings')) ?? {});
@@ -181,8 +182,9 @@ function openSettings() {
   settingsInput('usage-visible').checked = localStorage.getItem('perona-hide-usage') !== 'true';
   for (const [id, key] of Object.entries({
     'editor-font': 'editorFont', 'editor-tabs': 'tabWidth', startup: 'startup', agent: 'agent',
-    folder: 'folder', updates: 'updates', zoom: 'zoom'
+    folder: 'folder', updates: 'updates', zoom: 'zoom', 'window-preview-action': 'windowPreviewAction'
   })) settingsInput(id).value = appPreferences[key];
+  settingsInput('keep-window-docked').checked = appPreferences.keepWindowDocked;
   settingsInput('editor-wrap').checked = appPreferences.wrap;
   settingsInput('editor-minimap').checked = appPreferences.minimap;
   shortcutDraft = { ...appPreferences.shortcuts };
@@ -261,10 +263,13 @@ settingsDialog.addEventListener('close', () => {
     folder: settingsInput('folder').value,
     updates: settingsInput('updates').value,
     zoom: Number(settingsInput('zoom').value),
+    windowPreviewAction: settingsInput('window-preview-action').value,
+    keepWindowDocked: settingsInput('keep-window-docked').checked,
     shortcuts: shortcutDraft
   });
   localStorage.setItem('perona-settings', JSON.stringify(appPreferences));
   applySettingsDisplay();
+  syncPreview();
   applyEditorShortcuts();
   if (previousRoam !== !roam) document.dispatchEvent(new Event('perona-roaming-change'));
   const size = terminalFontSize();

@@ -97,10 +97,22 @@ function showEditorFile(session, file) {
   const root = view.filesPanel;
   const heading = root.querySelector('.preview-heading');
   const content = root.querySelector('.file-content');
+  const imagePreview = root.querySelector('.file-image');
   root.querySelector('.editor-toolbar').hidden = !file;
   heading.textContent = heading.title = file?.relative || '';
   view.fileEditor.hidden = !file?.model;
-  content.hidden = Boolean(file?.model);
+  content.hidden = Boolean(file?.model || file?.image);
+  imagePreview.hidden = !file?.image;
+  imagePreview.replaceChildren();
+  if (file?.image) {
+    const image = document.createElement('img');
+    image.alt = file.relative.split('/').at(-1);
+    image.addEventListener('error', () => {
+      if (image.parentElement === imagePreview) image.replaceWith('This image could not be displayed.');
+    }, { once: true });
+    image.src = 'data:' + file.image.type + ';base64,' + file.image.base64;
+    imagePreview.append(image);
+  }
   if (file?.model) {
     view.editor.setModel(file.model);
     if (file.position) view.editor.restoreViewState(file.position);
@@ -215,8 +227,8 @@ async function cacheFilePreview(session, relative, result) {
   const text = (result.text ?? '').replace(/\r\n|\r/g, '\n');
   const position = cached?.model && cached === view.file ? view.editor.saveViewState() : cached?.position;
   const file = { relative, revision: result.revision, text, mixedEndings: result.mixedEndings,
-    truncated: result.truncated, position,
-    preview: result.binary ? 'This file needs a binary or encoding-specific editor.' : result.text };
+    truncated: result.truncated, position, image: result.image,
+    preview: result.notice ?? (result.binary ? 'This file needs a binary or encoding-specific editor.' : result.text) };
   if (result.revision) {
     await monacoReady();
     if (view.editorDisposed) return;

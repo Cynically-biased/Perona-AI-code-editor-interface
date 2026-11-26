@@ -387,6 +387,14 @@ dialog input {
   font: 12px/1.5 "Cascadia Mono", Consolas, monospace;
 }
 .file-content { flex: 1; }
+.file-image {
+  flex: 1; min-height: 0; display: grid; place-items: center;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+  padding: 12px; overflow: hidden; background: var(--terminal); color: var(--muted);
+}
+.file-image:has(+ .file-editor:not([hidden])) { flex: 0 1 35%; }
+.file-image img { width: 100%; height: 100%; min-height: 0; object-fit: contain; }
+.file-image[hidden] { display: none; }
 .changes-content { min-height: 0; overflow: auto; padding: 8px 16px 16px; }
 .changes-content h4 { margin: 12px 0 6px; }
 .diff-content .addition { color: #cde5b5; }
@@ -450,6 +458,11 @@ dialog input {
   background: var(--terminal); border: 1px solid var(--line); color: var(--text); font: inherit;
 }
 .browser-surface { flex: 1; min-height: 0; background: #fff; }
+.preview-video { display: block; width: 100%; height: 100%; object-fit: contain; background: var(--terminal); }
+.preview-video[hidden], .preview-stop[hidden], .browser-toolbar button[hidden] { display: none; }
+#preview-window-status { margin: 0; color: var(--muted); }
+#preview-window-status:empty { display: none; }
+#preview-window-dialog [data-primary] { background: var(--selected); border-color: var(--accent); }
 #local-preview { position: fixed; z-index: 4; user-select: none; }
 #local-preview[hidden] { display: none; }
 body:has(.perona-pet[data-dragging], #context-menu:popover-open) #local-preview { pointer-events: none; }

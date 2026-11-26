@@ -9,6 +9,12 @@ const { runGit } = require('./project-git.cjs');
 const run = promisify(execFile);
 const previewLimit = 160 * 1024;
 const editLimit = 2 * 1024 * 1024;
+const imageLimit = 20 * 1024 * 1024;
+const imageTypes = new Map([
+  ['.png', 'image/png'], ['.apng', 'image/apng'], ['.jpg', 'image/jpeg'], ['.jpeg', 'image/jpeg'],
+  ['.gif', 'image/gif'], ['.webp', 'image/webp'], ['.avif', 'image/avif'], ['.bmp', 'image/bmp'],
+  ['.ico', 'image/x-icon'], ['.svg', 'image/svg+xml']
+]);
 const saving = new Set();
 const removing = new Set();
 const directoryLimit = 1500;
@@ -158,12 +164,12 @@ function revision(data) {
   return createHash('sha256').update(data).digest('hex');
 }
 
-async function readFileBytes(target) {
+async function readFileBytes(target, limit = editLimit) {
   const file = await fs.open(target, 'r');
   try {
     const stat = await file.stat();
     if (!stat.isFile()) throw new Error('Select a regular file.');
-    const buffer = Buffer.alloc(Math.min(stat.size + 1, editLimit + 1));
+    const buffer = Buffer.alloc(Math.min(stat.size + 1, limit + 1));
     let length = 0;
     while (length < buffer.length) {
       const { bytesRead } = await file.read(buffer, length, buffer.length - length);
@@ -192,15 +198,22 @@ function decodeFile(bytes, truncated = false) {
   }
 }
 
-async function previewFile(folder, relative) {
+async function previewFile(folder, relative, { images = false } = {}) {
   const target = await projectPath(folder, relative);
-  const { bytes } = await readFileBytes(target);
+  const imageType = images && imageTypes.get(path.extname(relative).toLowerCase());
+  const { bytes } = await readFileBytes(target, imageType ? imageLimit : editLimit);
+  let image;
+  if (imageType) {
+    if (bytes.length > imageLimit) return { notice: 'Images larger than 20 MB cannot be previewed.' };
+    image = { type: imageType, base64: bytes.toString('base64') };
+    if (imageType !== 'image/svg+xml') return { image };
+  }
   const truncated = bytes.length > editLimit;
   const data = truncated ? bytes.subarray(0, previewLimit) : bytes;
   const decoded = decodeFile(data, truncated);
-  if (!decoded) return { binary: true };
+  if (!decoded) return image ? { image } : { binary: true };
   return { text: decoded.text, truncated, revision: truncated ? null : revision(bytes),
-    mixedEndings: decoded.endings.length > 1 };
+    mixedEndings: decoded.endings.length > 1, image };
 }
 
 async function saveFile(folder, relative, expected, text) {

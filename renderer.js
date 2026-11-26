@@ -145,6 +145,8 @@ function setError(error) {
 }
 
 function removeSession(session) {
+  stopBrowserGame(session);
+  stopWindowPreview(session);
   sessions.delete(session.id);
   session.disposeChatInput?.();
   session.observer.disconnect();
@@ -559,7 +561,7 @@ async function startSession(chat, project, record, usePickedFolder) {
   const extra = record !== project;
   const view = createWorkspace();
   const body = view.root.querySelector('.agent-terminal');
-  const { terminal, fit } = createTerminal({ cursorBlink: false });
+  const { terminal, fit } = createTerminal({ cursorBlink: false, allowInterrupt: false });
   const session = { id, chat, folder, project, record, extra, agent: record.agent ?? chat.agent,
     body, terminal, fit, view, running: false, ended: false };
   configureWorkspace(session);

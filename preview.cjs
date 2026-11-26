@@ -1,4 +1,40 @@
-const { session } = require('electron');
+const { desktopCapturer, session } = require('electron');
+
+function createWindowCapture(window) {
+  let sources = new Map();
+  let selected;
+  function claim(id) {
+    const source = sources.get(id);
+    sources.clear();
+    if (!source) throw new Error('Choose a window from the current list.');
+    return source;
+  }
+  window.webContents.session.setDisplayMediaRequestHandler((request, callback) => {
+    const choice = selected;
+    selected = undefined;
+    if (request.frame !== window.webContents.mainFrame || !request.userGesture
+        || !request.videoRequested || request.audioRequested || !choice || Date.now() > choice.expires) {
+      callback({});
+      return;
+    }
+    callback({ video: choice.source });
+  });
+  return {
+    async list() {
+      selected = undefined;
+      const ownWindow = window.getMediaSourceId().split(':').slice(0, 2).join(':');
+      const windows = await desktopCapturer.getSources({ types: ['window'], thumbnailSize: { width: 0, height: 0 } });
+      sources = new Map(windows.filter(source => source.id.startsWith('window:')
+        && source.id.split(':').slice(0, 2).join(':') !== ownWindow).map(source => [source.id, source]));
+      return [...sources.values()].map(({ id, name }) => ({ id, name }));
+    },
+    select(id) {
+      selected = undefined;
+      selected = { source: claim(id), expires: Date.now() + 5000 };
+    },
+    claim
+  };
+}
 
 function localUrl(input, hosts) {
   if (typeof input !== 'string' || input.length > 2048) throw new Error('Enter a localhost address.');
@@ -55,17 +91,17 @@ function createPreview(window, notify) {
     guest.on('will-redirect', restrict);
     guest.setWindowOpenHandler(() => ({ action: 'deny' }));
     guest.on('did-navigate', (_event, url) => {
-      if (url === 'about:blank') return;
+      if (!owner || url === 'about:blank') return;
       if (resetHistory) guest.navigationHistory.clear();
       resetHistory = false;
       location = url;
       notify(owner, { url });
     });
     guest.on('did-navigate-in-page', (_event, url, isMainFrame) => {
-      if (isMainFrame) { location = url; notify(owner, { url }); }
+      if (owner && isMainFrame && url !== 'about:blank') { location = url; notify(owner, { url }); }
     });
     guest.on('did-fail-load', (_event, code, reason, _url, main) => {
-      if (main && code !== -3) notify(owner, { error: reason });
+      if (owner && main && code !== -3) notify(owner, { error: reason });
     });
     load();
   });
@@ -81,6 +117,16 @@ function createPreview(window, notify) {
         load();
       }
     },
+    stop(id) {
+      if (owner !== id) return;
+      owner = undefined;
+      location = undefined;
+      resetHistory = true;
+      if (contents && !contents.isDestroyed()) {
+        contents.stop();
+        contents.loadURL('about:blank').catch(() => {});
+      }
+    },
     reload(id) { if (id === owner) contents?.reload(); },
     back(id) {
       if (id === owner && contents?.navigationHistory.canGoBack()) contents.navigationHistory.goBack();
@@ -88,4 +134,4 @@ function createPreview(window, notify) {
   };
 }
 
-module.exports = { createPreview };
+module.exports = { createPreview, createWindowCapture };

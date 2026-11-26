@@ -8,7 +8,7 @@ function updateTerminalFont(terminal, body, fit, size) {
   fitTerminal(body, fit);
 }
 
-function createTerminal({ cursorBlink = true, readOnly = false } = {}) {
+function createTerminal({ cursorBlink = true, readOnly = false, allowInterrupt = true } = {}) {
   const terminal = new Terminal({
     cursorBlink, fontFamily: 'Cascadia Mono, Consolas, monospace',
     fontSize: terminalFontSize(), scrollback: 5000,
@@ -28,23 +28,29 @@ function createTerminal({ cursorBlink = true, readOnly = false } = {}) {
   const fit = new FitAddon.FitAddon();
   terminal.loadAddon(fit);
   terminal.attachCustomKeyEventHandler(event => {
-    if (!event.ctrlKey || !event.shiftKey || !['KeyC', 'KeyV'].includes(event.code)) return true;
-    if (event.type === 'keydown') terminalClipboard(event, terminal);
+    if (!event.ctrlKey || event.altKey || event.metaKey || event.isComposing
+        || !['KeyC', 'KeyV'].includes(event.code)) return true;
+    const copy = event.code === 'KeyC';
+    if (copy && allowInterrupt && !readOnly && !event.shiftKey && !terminal.hasSelection()) return true;
+    event.preventDefault();
+    if (event.type === 'keydown') {
+      if (copy) copyTerminalSelection(terminal);
+      else if (!readOnly) pasteIntoTerminal(terminal);
+    }
     return false;
   });
   return { terminal, fit };
 }
 
-function terminalClipboard(event, terminal) {
-  event.preventDefault();
-  if (event.code === 'KeyC') {
-    const selection = terminal.getSelection();
-    if (selection) navigator.clipboard.writeText(selection).catch(setError);
-  } else {
-    navigator.clipboard.readText().then(text => {
-      if (text) terminal.paste(text);
-    }).catch(setError);
-  }
+function copyTerminalSelection(terminal) {
+  const selection = terminal.getSelection();
+  if (selection) window.desk.copyTerminalText(selection).catch(setError);
+}
+
+function pasteIntoTerminal(terminal) {
+  window.desk.readTerminalClipboard().then(text => {
+    if (text && terminal.element?.isConnected) terminal.paste(text);
+  }).catch(setError);
 }
 
 function configureChatInput(session) {
@@ -168,18 +174,9 @@ function configureChatInput(session) {
   const onKeyDown = event => {
     if (history.contains(event.target)) {
       if (event.key === 'Escape') jump.click();
-      else if (event.ctrlKey && !event.altKey && !event.metaKey && event.code === 'KeyC') {
-        event.stopImmediatePropagation();
-        terminalClipboard(event, viewer.terminal);
-      }
       return;
     }
     if (event.altKey || event.metaKey || event.isComposing) return;
-    if (event.ctrlKey && ['KeyC', 'KeyV'].includes(event.code)) {
-      event.stopImmediatePropagation();
-      terminalClipboard(event, session.terminal);
-      return;
-    }
     if (event.key !== 'Enter' || (!event.shiftKey && !event.ctrlKey)) return;
     event.preventDefault();
     event.stopImmediatePropagation();

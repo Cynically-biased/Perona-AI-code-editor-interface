@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, clipboard, dialog, ipcMain, shell } = require('electron');
 const { execFile, execFileSync } = require('node:child_process');
 const { existsSync, readdirSync, statSync } = require('node:fs');
 const path = require('node:path');
@@ -7,7 +7,8 @@ const { realpath, stat, writeFile } = require('node:fs/promises');
 const { codexUsage, claudeUsage, claudeUsageSettings } = require('./agent-usage.cjs');
 const { createUsageHistory } = require('./usage-history.cjs');
 const pty = require('node-pty');
-const { createPreview } = require('./preview.cjs');
+const { createPreview, createWindowCapture } = require('./preview.cjs');
+const { createNativeWindowDock } = require('./native-window.cjs');
 const { createAppUpdates } = require('./app-updates.cjs');
 const { localHosts, suggestPreview } = require('./project-preview.cjs');
 const xampp = require('./xampp.cjs');
@@ -39,6 +40,8 @@ let window;
 let discardWindowEdits = false;
 let workspace;
 let preview;
+let windowCapture;
+let nativeWindowDock;
 let previewRequest = 0;
 const appUpdates = createAppUpdates(app.isPackaged && process.platform === 'win32',
   status => send('app-update-status', status), app.getVersion());
@@ -561,7 +564,12 @@ register('session-history', (id, candidate, idle) => projectFor(id).history(
   typeof candidate === 'string' ? candidate : '', idle === true));
 
 register('project-list', (id, relative) => listFolder(projectFor(id).cwd, relative));
-register('project-preview', (id, relative) => previewFile(projectFor(id).cwd, relative));
+register('terminal-copy', text => {
+  if (typeof text !== 'string') throw new Error('Select terminal text to copy.');
+  clipboard.writeText(text);
+});
+register('terminal-paste', () => clipboard.readText());
+register('project-preview', (id, relative) => previewFile(projectFor(id).cwd, relative, { images: true }));
 async function trackFileWork(operation) {
   fileOperations.add(operation);
   try {
@@ -615,6 +623,11 @@ register('git-create-page', provider => {
 });
 
 register('preview-suggest', id => suggestPreview(projectFor(id).cwd));
+register('preview-list-windows', () => windowCapture.list());
+register('preview-select-window', id => windowCapture.select(id));
+register('preview-dock-window', id => nativeWindowDock.start(windowCapture.claim(id).id));
+register('preview-dock-layout', bounds => nativeWindowDock.layout(bounds));
+register('preview-undock-window', () => nativeWindowDock.stop());
 register('preview-show', async (id, url) => {
   projectFor(id);
   const request = ++previewRequest;
@@ -624,6 +637,10 @@ register('preview-show', async (id, url) => {
 });
 register('preview-hide', () => {
   previewRequest++;
+});
+register('preview-stop-game', id => {
+  previewRequest++;
+  preview.stop(id);
 });
 register('preview-reload', id => preview?.reload(id));
 register('preview-back', id => preview?.back(id));
@@ -688,6 +705,15 @@ else app.whenReady().then(() => {
     guest.on('before-input-event', handleInterfaceZoomShortcut);
   });
   preview = createPreview(window, (owner, update) => send('preview-update', owner, update));
+  windowCapture = createWindowCapture(window);
+  nativeWindowDock = createNativeWindowDock(window, () => send('preview-window-ended'));
+  window.on('close', event => {
+    if (!nativeWindowDock.active) return;
+    event.preventDefault();
+    nativeWindowDock.stop().then(() => {
+      if (!window.isDestroyed()) window.close();
+    });
+  });
   window.on('maximize', () => send('window-maximized', true));
   window.on('unmaximize', () => send('window-maximized', false));
   window.on('move', () => send('window-moved'));
@@ -713,9 +739,9 @@ app.on('second-instance', () => {
 app.on('window-all-closed', () => app.quit());
 
 app.on('before-quit', event => {
-  if (!starting.size && !fileOperations.size) return;
+  if (!starting.size && !fileOperations.size && !nativeWindowDock?.active) return;
   event.preventDefault();
-  Promise.allSettled([...starting.values(), ...fileOperations]).then(() => app.quit());
+  Promise.allSettled([...starting.values(), ...fileOperations, nativeWindowDock?.stop()]).then(() => app.quit());
 });
 app.on('will-quit', () => {
   for (const id of projectShells.keys()) closeProjectShell(id);
