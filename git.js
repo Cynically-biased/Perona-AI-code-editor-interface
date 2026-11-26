@@ -55,7 +55,7 @@ function configureGit(session) {
       const input = form.querySelector('input');
       const data = action === 'identity'
         ? { name: input.value, email: form.elements.email.value } : input.value;
-      runGitAction(session, action, data);
+      runGitAction(session, action === 'origin' && git.status?.origin ? 'change-origin' : action, data);
     });
   }
   const pathInput = git.untrack.querySelector('input');
@@ -150,6 +150,7 @@ function renderGit(session, status) {
     + (status.upstream ? ' · Tracking ' + status.upstream : '');
   git.originLabel.textContent = status.origin ? 'Origin · ' + status.origin : '';
   git.connect.hidden = Boolean(status.origin);
+  git.origin.querySelector('button').textContent = status.origin ? 'Change origin' : 'Connect origin';
   git.actions.fetch.disabled = !status.origin;
   git.pullSource = status.upstream || (status.origin && status.branch ? 'origin/' + status.branch : '');
   git.actions.pull.disabled = !status.head || !status.branch || !git.pullSource;
@@ -184,6 +185,7 @@ function renderGit(session, status) {
 
 const gitSuccess = {
   init: 'Git initialized.', origin: 'Origin connected.', identity: 'Commit author saved.',
+  'change-origin': 'Origin URL updated.',
   commit: 'Commit created.', fetch: 'Fetched from origin.', pull: 'Pulled remote changes.',
   push: 'Pushed to origin.', untrack: 'Removal staged. Local copies are still on disk.',
   'unstage-all': 'All changes unstaged. Your files are still on disk.'
@@ -200,7 +202,8 @@ async function refreshGit(session, action, data) {
     if (action) {
       try {
         await window.desk.gitAction(session.id, action, data);
-        if (['commit', 'origin', 'untrack'].includes(action)) git[action].reset();
+        if (action === 'change-origin') git.origin.reset();
+        else if (['commit', 'origin', 'untrack'].includes(action)) git[action].reset();
         if (isViewVisible(session.view, 'changes')) loadChanges(session);
       } catch (failure) {
         error = readableError(failure);

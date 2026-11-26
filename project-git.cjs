@@ -146,6 +146,9 @@ async function gitAction(folder, action, data) {
       case 'origin':
         if (status.origin) throw new Error('This repository already has an origin.');
         return await git(['remote', 'add', 'origin', remoteUrl(data)]);
+      case 'change-origin':
+        if (!status.origin) throw new Error('This repository has no origin to change.');
+        return await git(['remote', 'set-url', 'origin', remoteUrl(data)]);
       case 'stage':
       case 'unstage': {
         const file = status.files.find(entry => entry.path === data);
