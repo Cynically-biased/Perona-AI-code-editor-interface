@@ -287,6 +287,40 @@
       title="Drag Perona to move her. Right-click for animations."></button>
   </div>
   <div id="context-menu" class="context-menu" popover="auto" role="menu" aria-label="Actions"></div>
+  <dialog id="engine-config" class="engine-dialog" aria-labelledby="engine-config-title">
+    <form method="dialog">
+      <h2 id="engine-config-title">Configure game engine</h2>
+      <p class="engine-help">Commands run from this project's folder. Enter each argument separately in a JSON list. Play desktop game uses Run Project arguments when no game executable has been selected.</p>
+      <label for="engine-executable">Engine executable</label>
+      <div class="engine-executable">
+        <input id="engine-executable" readonly placeholder="Choose the engine's .exe">
+        <button id="engine-browse" type="button">Browse…</button>
+      </div>
+      <button id="engine-godot" type="button">Use Godot 4 arguments</button>
+      <label for="engine-open-args">Open in Engine arguments</label>
+      <textarea id="engine-open-args" rows="2" maxlength="12000" spellcheck="false" required></textarea>
+      <label for="engine-run-args">Run Project arguments</label>
+      <textarea id="engine-run-args" rows="2" maxlength="12000" spellcheck="false" required></textarea>
+      <label for="engine-build-args">Build arguments</label>
+      <textarea id="engine-build-args" rows="2" maxlength="12000" spellcheck="false" required></textarea>
+      <p id="engine-config-status" class="engine-help" role="status"></p>
+      <div class="dialog-actions">
+        <button value="cancel" formnovalidate>Cancel</button>
+        <button value="save">Save engine</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="engine-build" class="engine-dialog" aria-labelledby="engine-build-title">
+    <form method="dialog">
+      <h2 id="engine-build-title">Build game</h2>
+      <p id="engine-build-status" role="status"></p>
+      <pre id="engine-build-output" tabindex="0" hidden></pre>
+      <div class="dialog-actions">
+        <button id="engine-build-stop" type="button">Stop build</button>
+        <button>Close</button>
+      </div>
+    </form>
+  </dialog>
   <dialog id="confirm-dialog" aria-labelledby="confirm-title" aria-describedby="confirm-message">
     <form method="dialog">
       <h2 id="confirm-title"></h2>
@@ -398,12 +432,31 @@
           </section>
           <section data-settings-panel="games" aria-labelledby="settings-games-heading" hidden>
             <h3 id="settings-games-heading">Games</h3>
+            <div class="settings-row">
+              <span>Current project engine <small>Set the executable and arguments for opening, running, and building this project.</small></span>
+              <button id="settings-configure-engine" class="settings-key" type="button">Configure engine…</button>
+            </div>
             <label class="settings-row">
-              <span>Desktop game startup wait <small>Seconds to wait for the game window before ending the playtest.</small></span>
+              <span>Desktop game launch source <small>Automatic uses a selected build first, then tries the project engine.</small></span>
+              <select id="settings-playtest-source">
+                <option value="auto">Automatic</option>
+                <option value="engine">Project engine</option>
+                <option value="build">Built game (.exe)</option>
+              </select>
+            </label>
+            <label class="settings-row">
+              <span>Desktop playtest window <small>Use a separate window for games that need fullscreen or cannot dock.</small></span>
+              <select id="settings-playtest-window">
+                <option value="dock">Inside Preview</option>
+                <option value="external">Separate window</option>
+              </select>
+            </label>
+            <label class="settings-row">
+              <span>Desktop game startup wait <small>When docking, seconds to wait for the game window before ending the playtest.</small></span>
               <input id="settings-playtest-wait" type="number" min="5" max="60" step="1" required>
             </label>
             <label class="settings-row">
-              <span>Keep playtest running when switching tabs <small>The game is hidden until you return to Preview. Switching projects stops the playtest.</small></span>
+              <span>Keep playtest running when switching tabs <small>A docked game is hidden until you return to Preview. Switching projects stops the playtest.</small></span>
               <input id="settings-keep-window-docked" type="checkbox">
             </label>
           </section>

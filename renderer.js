@@ -432,6 +432,107 @@ function openCloneDialog(agent = appPreferences.agent) {
 const projectMenu = document.getElementById('project-menu');
 const gamesMenu = document.getElementById('games-menu');
 const currentProject = () => activeChat?.projects.get(activeChat.selectedId);
+const engineDialog = document.getElementById('engine-config');
+const engineForm = engineDialog.querySelector('form');
+const engineExecutable = document.getElementById('engine-executable');
+const engineStatus = document.getElementById('engine-config-status');
+const engineActions = ['open', 'run', 'build'];
+const engineArgs = action => document.getElementById('engine-' + action + '-args');
+let engineProject;
+
+async function configureGameEngine(project, fromSettings = false) {
+  try {
+    const profile = await window.desk.loadGameEngine(project.id);
+    const openDialog = document.querySelector('dialog[open]:not(#settings-dialog)');
+    if (currentProject() !== project || engineDialog.open
+        || openDialog || settingsDialog.open !== fromSettings) return;
+    engineProject = project;
+    engineExecutable.value = profile.executable;
+    for (const action of engineActions) engineArgs(action).value = JSON.stringify(profile[action]);
+    engineStatus.textContent = '';
+    engineDialog.showModal();
+    syncPreview();
+  } catch (error) { setError(error); }
+}
+
+settingsInput('configure-engine').addEventListener('click', () => {
+  const project = currentProject();
+  if (project) configureGameEngine(project, true);
+});
+
+document.getElementById('engine-browse').addEventListener('click', async () => {
+  const project = engineProject;
+  try {
+    const executable = await window.desk.chooseGameEngine(project.id);
+    if (executable && engineDialog.open && engineProject === project) engineExecutable.value = executable;
+  } catch (error) { engineStatus.textContent = readableError(error); }
+});
+
+document.getElementById('engine-godot').addEventListener('click', () => {
+  engineArgs('open').value = JSON.stringify(['--editor', '--path', '.']);
+  engineArgs('run').value = JSON.stringify(['--path', '.', '--windowed']);
+  engineArgs('build').value = JSON.stringify(['--headless', '--path', '.', '--export-release', 'Windows Desktop', 'game.exe']);
+  engineStatus.textContent = 'For Build, install the Godot export templates and use a matching export preset name.';
+});
+
+engineForm.addEventListener('submit', async event => {
+  if (event.submitter?.value !== 'save') return;
+  event.preventDefault();
+  const button = event.submitter;
+  if (button.disabled) return;
+  button.disabled = true;
+  try {
+    const profile = { executable: engineExecutable.value };
+    for (const action of engineActions) {
+      try { profile[action] = JSON.parse(engineArgs(action).value); }
+      catch { throw new Error('Check the JSON arguments for ' + action + '. Use [] for no arguments.'); }
+    }
+    await window.desk.saveGameEngine(engineProject.id, profile);
+    engineDialog.close();
+  } catch (error) { engineStatus.textContent = readableError(error); }
+  finally { button.disabled = false; }
+});
+
+const engineBuildDialog = document.getElementById('engine-build');
+const engineBuildStatus = document.getElementById('engine-build-status');
+const engineBuildOutput = document.getElementById('engine-build-output');
+const engineBuildStop = document.getElementById('engine-build-stop');
+let buildingEngineProject;
+engineBuildDialog.addEventListener('cancel', event => { if (buildingEngineProject) event.preventDefault(); });
+engineBuildStop.addEventListener('click', async () => {
+  if (!buildingEngineProject) return;
+  try { await window.desk.stopGameEngine(buildingEngineProject.id); }
+  catch (error) { engineBuildStatus.textContent = readableError(error); }
+});
+
+async function runGameEngine(project, action) {
+  if (action !== 'build') {
+    try { await window.desk.launchGameEngine(project.id, action); }
+    catch (error) { setError(error); }
+    return;
+  }
+  if (buildingEngineProject || document.querySelector('dialog[open]')) return;
+  buildingEngineProject = project;
+  const close = engineBuildDialog.querySelector('button:not([type="button"])');
+  close.disabled = true;
+  engineBuildStop.disabled = false;
+  engineBuildOutput.hidden = true;
+  engineBuildStatus.textContent = 'Building ' + project.chat.title.textContent + '…';
+  engineBuildDialog.showModal();
+  syncPreview();
+  try {
+    const { code, signal, output } = await window.desk.launchGameEngine(project.id, action);
+    engineBuildStatus.textContent = signal ? 'Build stopped.' : code === 0 ? 'Build finished.' : 'Build failed with exit code ' + code + '.';
+    engineBuildOutput.textContent = output;
+    engineBuildOutput.hidden = !output;
+  } catch (error) { engineBuildStatus.textContent = readableError(error); }
+  finally {
+    buildingEngineProject = undefined;
+    close.disabled = false;
+    engineBuildStop.disabled = true;
+  }
+}
+
 const toolbarMenus = new Map([
   [projectMenu, () => [
     ['New project', () => openChat(appPreferences.agent)],
@@ -448,6 +549,11 @@ const toolbarMenus = new Map([
     const project = currentProject();
     const actions = [];
     if (project) {
+      actions.push(['Configure engine…', () => configureGameEngine(project)],
+        ['Open in Engine', () => runGameEngine(project, 'open')],
+        ['Run Project', () => runGameEngine(project, 'run')],
+        ['Build Project', () => runGameEngine(project, 'build')],
+        ['Stop engine task', () => window.desk.stopGameEngine(project.id).catch(setError)]);
       const previewAction = selector => () => {
         showView(project, 'preview');
         project.view.previewPanel.querySelector(selector).click();

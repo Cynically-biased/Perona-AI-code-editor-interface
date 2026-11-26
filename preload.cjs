@@ -2,6 +2,11 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('desk', {
   windowControl: action => ipcRenderer.invoke('window-control', action),
+  loadGameEngine: id => ipcRenderer.invoke('game-engine-load', id),
+  chooseGameEngine: id => ipcRenderer.invoke('game-engine-choose', id),
+  saveGameEngine: (id, profile) => ipcRenderer.invoke('game-engine-save', id, profile),
+  launchGameEngine: (id, action) => ipcRenderer.invoke('game-engine-launch', id, action),
+  stopGameEngine: id => ipcRenderer.invoke('game-engine-stop', id),
   copyTerminalText: text => ipcRenderer.invoke('terminal-copy', text),
   readTerminalClipboard: () => ipcRenderer.invoke('terminal-paste'),
   appUpdateStatus: () => ipcRenderer.invoke('app-update-status'),
@@ -37,7 +42,7 @@ contextBridge.exposeInMainWorld('desk', {
   removeWorkspace: chat => ipcRenderer.invoke('workspace-remove', chat),
   previewSuggest: id => ipcRenderer.invoke('preview-suggest', id),
   previewChoosePlaytest: id => ipcRenderer.invoke('preview-choose-playtest', id),
-  previewStartPlaytest: (id, wait) => ipcRenderer.invoke('preview-start-playtest', id, wait),
+  previewStartPlaytest: (id, options) => ipcRenderer.invoke('preview-start-playtest', id, options),
   previewPlaytestLayout: (id, bounds) => ipcRenderer.invoke('preview-playtest-layout', id, bounds),
   previewStopPlaytest: id => ipcRenderer.invoke('preview-stop-playtest', id),
   onPreviewPlaytestEnded: callback => ipcRenderer.on('preview-playtest-ended', (_event, ...args) => callback(...args)),

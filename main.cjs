@@ -9,6 +9,7 @@ const { createUsageHistory } = require('./usage-history.cjs');
 const pty = require('node-pty');
 const { createPreview } = require('./preview.cjs');
 const { createNativePlaytest } = require('./native-window.cjs');
+const { createGameEngines } = require('./game-engine.cjs');
 const { createAppUpdates } = require('./app-updates.cjs');
 const { localHosts, suggestPreview } = require('./project-preview.cjs');
 const xampp = require('./xampp.cjs');
@@ -41,6 +42,7 @@ let discardWindowEdits = false;
 let workspace;
 let preview;
 let nativePlaytest;
+const gameEngines = createGameEngines(path.join(app.getPath('userData'), 'game-engines'));
 const playtestExecutables = new Map();
 let previewRequest = 0;
 const appUpdates = createAppUpdates(app.isPackaged && process.platform === 'win32',
@@ -623,6 +625,24 @@ register('git-create-page', provider => {
 });
 
 register('preview-suggest', id => suggestPreview(projectFor(id).cwd));
+register('game-engine-load', id => gameEngines.load(projectFor(id).cwd));
+register('game-engine-save', (id, profile) => gameEngines.save(projectFor(id).cwd, profile));
+register('game-engine-launch', (id, action) => gameEngines.launch(projectFor(id).cwd, action));
+register('game-engine-stop', id => gameEngines.stop(projectFor(id).cwd));
+register('game-engine-choose', async id => {
+  const { cwd } = projectFor(id);
+  if (pickerOpen) return null;
+  pickerOpen = true;
+  try {
+    const { canceled, filePaths: [executable] } = await dialog.showOpenDialog(window, {
+      title: 'Choose the installed engine executable', defaultPath: cwd,
+      properties: ['openFile'], filters: [{ name: 'Windows executable', extensions: ['exe'] }]
+    });
+    return canceled || !executable ? null : await gameEngines.choose(cwd, executable);
+  } finally {
+    pickerOpen = false;
+  }
+});
 async function projectPlaytestExecutable(folder, selected) {
   const root = await realpath(folder);
   const executable = await realpath(selected);
@@ -657,9 +677,25 @@ register('preview-choose-playtest', async id => {
   const executable = await choosePlaytestExecutable(projectFor(id).cwd);
   return executable && path.basename(executable);
 });
-register('preview-start-playtest', async (id, wait) => {
+register('preview-start-playtest', async (id, options) => {
   const folder = projectFor(id).cwd;
-  let executable = playtestExecutables.get(folder);
+  const source = options?.source;
+  const docked = options?.window !== 'external';
+  const wait = options?.wait;
+  let executable = source === 'engine' ? undefined : playtestExecutables.get(folder);
+  const seconds = Number.isInteger(wait) && wait >= 5 && wait <= 60 ? wait : 12;
+  const launch = async (file, cwd, name, args = []) => {
+    if (projectFor(id).cwd !== folder) throw new Error('The active project changed before playtest started.');
+    await nativePlaytest.start(id, file, cwd, seconds, args, docked);
+    return { name, docked };
+  };
+  if (!executable && source !== 'build') {
+    const detected = await gameEngines.detectPlaytest(folder, docked);
+    if (detected) {
+      return launch(detected.executable, folder, path.basename(folder), detected.args);
+    }
+    if (source === 'engine') throw new Error('Configure an engine for this project in Settings → Games.');
+  }
   if (executable) {
     try {
       executable = await projectPlaytestExecutable(folder, executable);
@@ -670,10 +706,7 @@ register('preview-start-playtest', async (id, wait) => {
     }
   } else executable = await choosePlaytestExecutable(folder);
   if (!executable) return null;
-  if (projectFor(id).cwd !== folder) throw new Error('The active project changed before playtest started.');
-  const seconds = Number.isInteger(wait) && wait >= 5 && wait <= 60 ? wait : 12;
-  await nativePlaytest.start(id, executable, path.dirname(executable), seconds);
-  return path.basename(executable);
+  return launch(executable, path.dirname(executable), path.basename(executable));
 });
 register('preview-playtest-layout', (id, bounds) => nativePlaytest.layout(id, bounds));
 register('preview-stop-playtest', id => nativePlaytest.stop(id));
@@ -792,6 +825,7 @@ app.on('before-quit', event => {
   Promise.allSettled([...starting.values(), ...fileOperations, nativePlaytest?.stop()]).then(() => app.quit());
 });
 app.on('will-quit', () => {
+  gameEngines.stopAll();
   for (const id of projectShells.keys()) closeProjectShell(id);
   for (const id of chats.keys()) {
     try {

@@ -210,15 +210,18 @@ async function startDesktopPlaytest(session) {
   try {
     if (playtestStopping) await playtestStopping;
     if (desktopPlaytest !== run) return;
-    const name = await window.desk.previewStartPlaytest(session.id, appPreferences.playtestWait);
+    const result = await window.desk.previewStartPlaytest(session.id, {
+      wait: appPreferences.playtestWait, source: appPreferences.playtestSource, window: appPreferences.playtestWindow
+    });
     if (desktopPlaytest !== run) return;
-    if (!name) {
+    if (!result) {
       stopDesktopPlaytest(session);
       syncPreview();
       return;
     }
     run.ready = true;
-    browserMessage(session, 'Playing · ' + name);
+    run.docked = result.docked;
+    browserMessage(session, (result.docked ? 'Playing · ' : 'Playing in a separate window · ') + result.name);
     syncPreview();
   } catch (error) {
     if (desktopPlaytest !== run) return;
@@ -250,7 +253,7 @@ function syncPreview() {
   const anyDialog = document.querySelector('dialog[open]');
   const obscured = !previewVisible || anyDialog || liftedDrag || session.dock.busy
     || session.dock.root.querySelector('.dock-controls[open]');
-  if (desktopPlaytest?.ready) {
+  if (desktopPlaytest?.ready && desktopPlaytest.docked) {
     let bounds = null;
     if (!obscured && !contextMenu.matches(':popover-open')) {
       const { left, top, right, bottom } = session.view.surface.getBoundingClientRect();

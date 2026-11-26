@@ -197,9 +197,9 @@ function createNativePlaytest(window, notify) {
 
   return {
     get active() { return Boolean(active); },
-    async start(id, executable, cwd, waitSeconds = 12) {
+    async start(id, executable, cwd, waitSeconds = 12, args = [], docked = true) {
       if (active) throw new Error('Stop the current desktop playtest first.');
-      const game = spawn(executable, [], { cwd, stdio: 'ignore', windowsHide: false });
+      const game = spawn(executable, args, { cwd, stdio: 'ignore', windowsHide: false });
       const run = { id, game, closed: new Promise(resolve => game.once('close', resolve)) };
       active = run;
       game.on('error', () => {});
@@ -210,7 +210,7 @@ function createNativePlaytest(window, notify) {
           game.once('error', reject);
         });
         if (run.stopping) return;
-        await dock.start(game.pid, waitSeconds);
+        if (docked) await dock.start(game.pid, waitSeconds);
         if (run.stopping) return;
         if (game.exitCode !== null || game.signalCode) throw new Error('The game exited before preview was ready.');
         run.ready = true;
