@@ -119,6 +119,7 @@
             <button class="new-file" type="button">New file</button>
             <button class="new-directory" type="button">New folder</button>
             <button class="file-refresh" type="button">Refresh</button>
+            <button class="file-save-all" type="button" disabled title="Save all edited files in this project">Save All</button>
           </div>
           <div class="file-browser">
             <div class="file-list" aria-label="Files and folders"></div>
@@ -191,6 +192,7 @@
                 <div class="git-actions">
                   <h4>File changes</h4>
                   <button type="button" data-git-action="stage-all">Stage all</button>
+                  <button type="button" data-git-action="unstage-all">Unstage All</button>
                 </div>
                 <ul class="git-files" aria-label="Changed files"></ul>
               </div>
@@ -279,10 +281,19 @@
   <webview id="local-preview" src="about:blank" partition="perona-local-preview" hidden></webview>
   <dialog id="preview-window-dialog" aria-labelledby="preview-window-title">
     <form method="dialog">
-      <h2 id="preview-window-title">Live Window Preview</h2>
-      <label for="preview-window-choice">Choose a running app or game. Play inside Perona with a compatible window, or watch it live.</label>
-      <select id="preview-window-choice" required disabled></select>
-      <p id="preview-window-status" role="status"></p>
+      <header class="preview-picker-header">
+        <span class="preview-picker-icon" aria-hidden="true"></span>
+        <div>
+          <h2 id="preview-window-title">Live Window Preview</h2>
+          <p>Choose a running app or game.</p>
+        </div>
+      </header>
+      <div class="preview-picker-body">
+        <label for="preview-window-choice">Open windows</label>
+        <select id="preview-window-choice" required disabled aria-describedby="preview-window-help"></select>
+        <p id="preview-window-status" role="status"></p>
+        <p id="preview-window-help">Play inside Perona to interact with a compatible window, or choose Watch live to view it.</p>
+      </div>
       <div class="dialog-actions">
         <button class="preview-picker-cancel" type="button">Cancel</button>
         <button value="start" disabled>Watch live</button>

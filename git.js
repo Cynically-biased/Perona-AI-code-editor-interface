@@ -157,6 +157,8 @@ function renderGit(session, status) {
   git.actions.push.disabled = !status.origin || !status.push || !status.branch
     || !status.head || status.push.includes('\n');
   git.actions['stage-all'].disabled = status.conflicts || !status.files.some(file => file.code[1] !== ' ');
+  git.actions['unstage-all'].disabled = status.conflicts
+    || !status.files.some(file => ![' ', '?'].includes(file.code[0]));
   git.commit.querySelector('button').disabled = status.conflicts || !status.name || !status.email
     || !status.files.some(file => ![' ', '?'].includes(file.code[0]));
   git.identity.elements.author.value = status.name;
@@ -183,7 +185,8 @@ function renderGit(session, status) {
 const gitSuccess = {
   init: 'Git initialized.', origin: 'Origin connected.', identity: 'Commit author saved.',
   commit: 'Commit created.', fetch: 'Fetched from origin.', pull: 'Pulled remote changes.',
-  push: 'Pushed to origin.', untrack: 'Removal staged. Local copies are still on disk.'
+  push: 'Pushed to origin.', untrack: 'Removal staged. Local copies are still on disk.',
+  'unstage-all': 'All changes unstaged. Your files are still on disk.'
 };
 
 async function refreshGit(session, action, data) {

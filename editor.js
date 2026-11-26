@@ -53,14 +53,16 @@ function configureEditor(session) {
   view.expandedFolders = new Set();
   view.fileEditor = root.querySelector('.file-editor');
   view.fileSave = root.querySelector('.file-save');
+  view.fileSaveAll = root.querySelector('.file-save-all');
   view.fileSave.addEventListener('click', () => saveEditor(session));
+  view.fileSaveAll.addEventListener('click', () => saveProjectFiles([session]));
   root.querySelector('.file-reload').addEventListener('click', () => loadPreview(session, view.file.relative, true));
   root.querySelector('.new-file').addEventListener('click', () => openFileAction(session, 'file'));
   root.querySelector('.new-directory').addEventListener('click', () => openFileAction(session, 'directory'));
 }
 
 function hasUnsavedFile(view) {
-  return view.files ? [...view.files.values()].some(file => file.model && file.model.getValue() !== file.text) : false;
+  return view.files ? [...view.files.values()].some(dirty) : false;
 }
 
 function dirty(file) {
@@ -71,6 +73,7 @@ function updateEditor(view, status = '') {
   const { file } = view;
   const unsaved = dirty(file);
   view.fileSave.disabled = !unsaved || file.conflict || view.fileBusy;
+  view.fileSaveAll.disabled = Boolean(view.fileBusy) || !hasUnsavedFile(view);
   view.editor?.updateOptions({ readOnly: Boolean(view.fileBusy) });
   view.filesPanel.querySelector('.file-reload').disabled = Boolean(view.fileBusy);
   view.filesPanel.querySelector('.file-refresh').disabled = Boolean(view.fileBusy);
@@ -292,21 +295,29 @@ async function refreshFiles(session) {
   }
 }
 
+async function writeEditorFile(session, file) {
+  if (file.conflict) return false;
+  const text = file.model.getValue();
+  const result = await window.desk.save(session.id, file.relative, file.revision, text);
+  if (result.conflict) {
+    file.conflict = true;
+    return false;
+  }
+  file.text = text;
+  file.revision = result.revision;
+  file.mixedEndings = false;
+  return true;
+}
+
 async function saveEditor(session) {
   const { view } = session;
   if (view.fileSave.disabled || view.fileBusy) return;
   const file = view.file;
-  const text = file.model.getValue();
   view.fileBusy = true;
   updateEditor(view, 'Saving…');
   let status;
   try {
-    const result = await window.desk.save(session.id, file.relative, file.revision, text);
-    if (result.conflict) file.conflict = true;
-    else {
-      file.text = text;
-      file.revision = result.revision;
-      file.mixedEndings = false;
+    if (await writeEditorFile(session, file)) {
       status = 'Saved';
       if (file.relative.split('/').at(-1) === '.gitignore') loadFiles(session);
     }
@@ -314,7 +325,54 @@ async function saveEditor(session) {
     status = readableError(error);
   } finally {
     view.fileBusy = false;
-    updateEditor(view, status);
+    if (!view.editorDisposed) updateEditor(view, status);
+  }
+}
+
+async function saveProjectFiles(projects) {
+  const work = [];
+  const issues = [];
+  for (const session of projects) {
+    const { view } = session;
+    if (!view.files || view.editorDisposed) continue;
+    const files = [...view.files.values()].filter(dirty);
+    if (!files.length) continue;
+    const name = session.chat.title.textContent;
+    if (view.fileBusy) {
+      issues.push(name + ' is busy. Try saving again when its current operation finishes.');
+      continue;
+    }
+    view.fileBusy = true;
+    work.push({ session, files, name });
+  }
+  if (work.length) setError();
+  for (const { session } of work) updateEditor(session.view, 'Saving project files…');
+  for (const { session, files, name } of work) {
+    const { view } = session;
+    let saved = 0;
+    let refreshTree = false;
+    try {
+      for (const file of files) {
+        try {
+          if (await writeEditorFile(session, file)) {
+            saved++;
+            refreshTree ||= file.relative.split('/').at(-1) === '.gitignore';
+          } else {
+            issues.push(name + ' / ' + file.relative + ' changed on disk. Your edits are still open.');
+          }
+        } catch (error) {
+          issues.push(name + ' / ' + file.relative + ' · ' + readableError(error));
+        }
+      }
+      if (refreshTree && !view.editorDisposed) loadFiles(session);
+    } finally {
+      view.fileBusy = false;
+      if (!view.editorDisposed) updateEditor(view, 'Saved ' + saved + ' of ' + files.length + ' edited files');
+    }
+  }
+  if (issues.length) {
+    const remaining = issues.length - 3;
+    setError(new Error(issues.slice(0, 3).join('  ·  ') + (remaining > 0 ? '  ·  ' + remaining + ' more' : '')));
   }
 }
 

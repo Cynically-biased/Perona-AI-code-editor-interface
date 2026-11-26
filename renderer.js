@@ -438,6 +438,11 @@ function showProjectMenu(event, hover = false) {
     ['New project', () => openChat(appPreferences.agent)],
     ['Open project…', () => openChat(appPreferences.agent, undefined, true)],
     ['Clone repository…', () => openCloneDialog()],
+    ['Save', () => {
+      const project = activeChat?.projects.get(activeChat.selectedId);
+      if (project) return saveProjectFiles([project]);
+    }],
+    ['Save All', () => saveProjectFiles([...sessions.values()].filter(session => !session.extra))],
     ['Settings', openSettings]
   ], projectMenu, { hover });
   projectMenu.setAttribute('aria-expanded', 'true');

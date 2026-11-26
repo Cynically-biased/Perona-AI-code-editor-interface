@@ -154,6 +154,9 @@ async function gitAction(folder, action, data) {
         return await git(status.head ? ['reset', '-q', 'HEAD', '--', file.path]
           : ['rm', '--cached', '-q', '--', file.path]);
       }
+      case 'unstage-all':
+        if (status.conflicts) throw new Error('Resolve Git conflicts before unstaging all changes.');
+        return await git(status.head ? ['reset', '-q', 'HEAD', '--', '.'] : ['read-tree', '--empty']);
       case 'stage-all':
         if (status.conflicts) throw new Error('Resolve and stage conflicted files individually.');
         if (hasLocalStagedRemovals(status.files)) {

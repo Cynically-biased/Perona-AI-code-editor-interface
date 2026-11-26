@@ -460,9 +460,43 @@ dialog input {
 .browser-surface { flex: 1; min-height: 0; background: #fff; }
 .preview-video { display: block; width: 100%; height: 100%; object-fit: contain; background: var(--terminal); }
 .preview-video[hidden], .preview-stop[hidden], .browser-toolbar button[hidden] { display: none; }
-#preview-window-status { margin: 0; color: var(--muted); }
+#preview-window-dialog {
+  width: min(510px, calc(100vw - 24px)); max-height: calc(100dvh - 24px);
+  padding: 0; overflow: auto; background: var(--workspace);
+}
+#preview-window-dialog form { gap: 0; }
+.preview-picker-header {
+  display: flex; align-items: center; gap: 14px; padding: 18px 20px;
+  background: linear-gradient(110deg, var(--panel), var(--sidebar)); border-bottom: 1px solid var(--line);
+}
+#preview-window-title { margin: 0; font: 650 19px "Segoe UI", sans-serif; }
+.preview-picker-header p { margin: 4px 0 0; color: var(--muted); }
+.preview-picker-icon {
+  display: grid; place-items: center; flex: none; width: 40px; height: 40px;
+  background: var(--selected); border: 1px solid var(--line); border-radius: 10px; color: var(--accent);
+}
+.preview-picker-icon::before {
+  content: ""; width: 19px; height: 14px; border: 1px solid currentColor;
+  border-top-width: 4px; border-radius: 3px;
+}
+.preview-picker-body { display: grid; gap: 8px; min-width: 0; padding: 18px 20px; }
+.preview-picker-body label { color: var(--text); font-size: 13px; font-weight: 600; }
+#preview-window-choice {
+  width: 100%; min-width: 0; min-height: 40px; padding: 7px 10px;
+  border: 1px solid var(--line); border-radius: 8px;
+  color: var(--text); background: var(--terminal); font: inherit;
+}
+#preview-window-choice:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#preview-window-status, #preview-window-help { margin: 0; color: var(--muted); line-height: 1.45; }
+#preview-window-help { font-size: 12px; }
 #preview-window-status:empty { display: none; }
-#preview-window-dialog [data-primary] { background: var(--selected); border-color: var(--accent); }
+#preview-window-dialog .dialog-actions {
+  flex-wrap: wrap; padding: 12px 20px; background: var(--sidebar); border-top: 1px solid var(--line);
+}
+#preview-window-dialog .preview-picker-cancel { margin-inline-end: auto; color: var(--muted); }
+#preview-window-dialog button:not(.preview-picker-cancel) { border-color: var(--line); }
+#preview-window-dialog button[data-primary] { background: var(--accent); color: #2b1729; border-color: var(--accent); }
+#preview-window-dialog button[data-primary]:hover:not(:disabled) { background: #ffc1de; }
 #local-preview { position: fixed; z-index: 4; user-select: none; }
 #local-preview[hidden] { display: none; }
 body:has(.perona-pet[data-dragging], #context-menu:popover-open) #local-preview { pointer-events: none; }
