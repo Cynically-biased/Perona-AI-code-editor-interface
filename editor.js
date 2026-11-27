@@ -98,6 +98,11 @@ function showEditorFile(session, file) {
   }
   view.file = file;
   const root = view.filesPanel;
+  root.querySelector('.file-list [aria-current="true"]')?.removeAttribute('aria-current');
+  if (file) {
+    root.querySelector('.file-list [data-file-path="' + CSS.escape(file.relative) + '"]')
+      ?.setAttribute('aria-current', 'true');
+  }
   const heading = root.querySelector('.preview-heading');
   const content = root.querySelector('.file-content');
   const imagePreview = root.querySelector('.file-image');

@@ -145,6 +145,10 @@ async function loadFileBranch(session, directory, list) {
         button.setAttribute('aria-label', button.title);
       }
       const relative = directory ? directory + '/' + entry.name : entry.name;
+      if (!entry.directory) {
+        button.dataset.filePath = relative;
+        if (view.file?.relative === relative) button.setAttribute('aria-current', 'true');
+      }
       const branch = entry.directory ? node('div', '', 'file-children') : null;
       const toggle = () => {
         const open = branch.hidden;
