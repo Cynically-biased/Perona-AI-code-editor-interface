@@ -5,6 +5,7 @@
     "*.js",
     "*.cjs",
     "index.html",
+    "startup.html",
     "style.css",
     "perona.png",
     "perona-eb05.ico",

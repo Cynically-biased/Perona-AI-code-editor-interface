@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'">
+  <title>Starting Perona</title>
+  <style>
+    :root { color-scheme: dark; font: 14px "Segoe UI", sans-serif; color: #fff0e7; background: #21141d; }
+    * { box-sizing: border-box; }
+    body {
+      min-height: 100dvh; margin: 0; padding: 26px; display: grid; align-content: center; gap: 17px;
+      border: 1px solid #855376; background: linear-gradient(135deg, #422537, #21141d 70%);
+      -webkit-app-region: drag;
+    }
+    header { display: flex; align-items: center; gap: 12px; }
+    img { width: 42px; height: 42px; border-radius: 50%; border: 1px solid #ff9fc7; object-fit: cover; }
+    h1 { margin: 0; font: 700 25px Georgia, serif; }
+    p { margin: 0; color: #dfb9ce; }
+    progress { width: 100%; height: 8px; accent-color: #ff9fc7; }
+  </style>
+</head>
+<body>
+  <header><img src="perona.png" alt=""><h1>Perona</h1></header>
+  <p id="startup-status" role="status">Checking for updates…</p>
+  <progress max="100" aria-label="Update progress"></progress>
+</body>
+</html>

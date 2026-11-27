@@ -424,6 +424,9 @@ dialog input {
 .file-editor:focus { outline: 1px solid var(--line); outline-offset: -1px; }
 
 .app-tool { -webkit-app-region: no-drag; color: var(--muted); min-height: 36px; }
+body:not(.game-dev-mode) [data-game-only] { display: none; }
+#game-dev-mode { white-space: nowrap; }
+.game-dev-mode #game-dev-mode { color: var(--accent); }
 #app-update { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .toolbar { gap: 12px; }
 .project-nav { overflow-x: auto; }

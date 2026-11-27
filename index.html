@@ -29,6 +29,7 @@
     <button id="open-services" class="app-tool" type="button">Services</button>
     <button id="app-update" class="app-tool" type="button" hidden>Check for updates</button>
     <div class="window-controls" role="group" aria-label="Window controls">
+      <button id="game-dev-mode" class="app-tool" type="button">Game Dev Mode</button>
       <button id="window-settings" class="window-control" type="button" aria-label="Open settings" title="Settings">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true">
           <path d="M9.8 3h4.4l.6 2.8 1.6.9 2.7-.9 2.2 3.8-2.1 1.9v1.8l2.1 1.9-2.2 3.8-2.7-.9-1.6.9-.6 2.8H9.8l-.6-2.8-1.6-.9-2.7.9-2.2-3.8 2.1-1.9v-1.8L2.7 9.6l2.2-3.8 2.7.9 1.6-.9z"/>
@@ -206,12 +207,12 @@
             <button type="button" class="browser-refresh" aria-label="Reload page" title="Reload">↻</button>
             <input class="browser-url" aria-label="Local URL" type="text" placeholder="localhost or local project hostname" required>
             <button type="submit">Go</button>
-            <button type="submit" class="browser-play" title="Play a browser build in Preview">Play</button>
-            <button type="button" class="browser-stop" hidden>Stop game</button>
+            <button type="submit" class="browser-play" data-game-only title="Play a browser build in Preview">Play</button>
+            <button type="button" class="browser-stop" data-game-only hidden>Stop game</button>
             <button type="button" class="browser-project">Use project URL</button>
-            <button type="button" class="desktop-play">Play desktop game</button>
-            <button type="button" class="desktop-choose">Choose game…</button>
-            <button type="button" class="desktop-stop" hidden>Stop desktop game</button>
+            <button type="button" class="desktop-play" data-game-only>Play desktop game</button>
+            <button type="button" class="desktop-choose" data-game-only>Choose game…</button>
+            <button type="button" class="desktop-stop" data-game-only hidden>Stop desktop game</button>
           </form>
           <p class="browser-message" role="status" hidden></p>
           <div class="browser-surface"></div>
@@ -374,7 +375,7 @@
           <button type="button" data-settings-category="terminal">Terminal</button>
           <button type="button" data-settings-category="projects">Projects</button>
           <button type="button" data-settings-category="keybindings">Shortcuts</button>
-          <button type="button" data-settings-category="games">Games</button>
+          <button type="button" data-settings-category="games" data-game-only>Games</button>
           <button type="button" data-settings-category="updates">Updates</button>
         </nav>
         <div class="settings-content">
@@ -463,7 +464,7 @@
           <section data-settings-panel="updates" aria-labelledby="settings-updates-heading" hidden>
             <h3 id="settings-updates-heading">Updates</h3>
             <label class="settings-row">On startup <select id="settings-updates">
-              <option value="download">Check and download updates</option>
+              <option value="download">Install updates automatically before opening</option>
               <option value="check">Check only</option>
               <option value="manual">Check manually</option>
             </select></label>

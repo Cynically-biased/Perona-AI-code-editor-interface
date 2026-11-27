@@ -431,7 +431,28 @@ function openCloneDialog(agent = appPreferences.agent) {
 
 const projectMenu = document.getElementById('project-menu');
 const gamesMenu = document.getElementById('games-menu');
+const gameModeButton = document.getElementById('game-dev-mode');
 const currentProject = () => activeChat?.projects.get(activeChat.selectedId);
+
+function isGameDeveloperMode() {
+  return document.body.classList.contains('game-dev-mode');
+}
+
+function switchDeveloperMode() {
+  const enabled = document.body.classList.toggle('game-dev-mode');
+  gameModeButton.textContent = enabled ? 'Back to editor' : 'Game Dev Mode';
+  if (!enabled) {
+    if (playingPreview) {
+      const { session } = playingPreview;
+      stopBrowserGame(session);
+      browserMessage(session, 'Preview stopped. Select Go to open the URL again.');
+    }
+    if (desktopPlaytest) stopDesktopPlaytest(desktopPlaytest.session);
+  }
+  syncPreview();
+}
+
+gameModeButton.addEventListener('click', switchDeveloperMode);
 const engineDialog = document.getElementById('engine-config');
 const engineForm = engineDialog.querySelector('form');
 const engineExecutable = document.getElementById('engine-executable');
@@ -533,6 +554,12 @@ async function runGameEngine(project, action) {
   }
 }
 
+window.desk.onGameEngineRunError((id, message) => {
+  const project = sessions.get(id);
+  const name = project?.chat.title.textContent;
+  setError(new Error(name ? name + ' · ' + message : message));
+});
+
 const toolbarMenus = new Map([
   [projectMenu, () => [
     ['New project', () => openChat(appPreferences.agent)],
@@ -546,8 +573,10 @@ const toolbarMenus = new Map([
     ['Settings', openSettings]
   ]],
   [gamesMenu, () => {
+    const enabled = isGameDeveloperMode();
+    const actions = [[enabled ? 'Back to editor' : 'Game Dev Mode', switchDeveloperMode]];
+    if (!enabled) return actions;
     const project = currentProject();
-    const actions = [];
     if (project) {
       actions.push(['Configure engine…', () => configureGameEngine(project)],
         ['Open in Engine', () => runGameEngine(project, 'open')],
@@ -965,4 +994,3 @@ window.addEventListener('beforeunload', event => {
 });
 applySettingsDisplay();
 restoreWorkspace();
-if (appPreferences.updates !== 'manual') window.desk.checkAppUpdate(appPreferences.updates === 'download').catch(setError);

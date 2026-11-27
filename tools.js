@@ -200,7 +200,7 @@ function stopDesktopPlaytest(session) {
 }
 
 async function startDesktopPlaytest(session) {
-  if (desktopPlaytest) return;
+  if (!isGameDeveloperMode() || desktopPlaytest) return;
   stopBrowserGame(session);
   const run = { session };
   desktopPlaytest = run;
@@ -343,6 +343,7 @@ function configureTools(session) {
   });
   toolbar.querySelector('.desktop-play').addEventListener('click', () => startDesktopPlaytest(session));
   toolbar.querySelector('.desktop-choose').addEventListener('click', async () => {
+    if (!isGameDeveloperMode()) return;
     try {
       const name = await window.desk.previewChoosePlaytest(session.id);
       if (name && sessions.get(session.id) === session) browserMessage(session, 'Desktop game selected · ' + name);
@@ -358,6 +359,7 @@ function configureTools(session) {
   view.previewObserver.observe(view.surface);
   toolbar.addEventListener('submit', event => {
     event.preventDefault();
+    if (event.submitter === play && !isGameDeveloperMode()) return;
     const url = address.value.trim();
     if (!url) return;
     stopDesktopPlaytest(session);

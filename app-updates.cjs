@@ -13,18 +13,28 @@ function createAppUpdates(enabled, notify, currentVersion) {
   let status = { state: enabled ? 'idle' : 'unavailable' };
   let availableVersions = new Set();
   let prepared;
-  function set(state, version, downgrade = false) {
-    status = { state, version, downgrade };
+  function set(state, version, downgrade = false, progress) {
+    status = { state, version, downgrade, progress };
     notify(status);
   }
 
-  async function prepare(updater, version, download = true) {
+  async function prepare(updater, version, download = true, signal) {
     prepared = undefined;
     set('checking', version, Boolean(version));
     updater.autoInstallOnAppQuit = false;
     updater.autoDownload = false;
+    let token;
+    const abort = () => {
+      token?.cancel();
+      set('error', version, Boolean(version));
+    };
+    const progress = ({ percent }) => {
+      if (!signal?.aborted && Number.isFinite(percent)) set('downloading', status.version, Boolean(version), percent);
+    };
+    signal?.addEventListener('abort', abort, { once: true });
     try {
       const result = await updater.checkForUpdates();
+      if (signal?.aborted) return;
       if (version && (!result?.isUpdateAvailable || result.updateInfo.version !== version)) {
         throw new Error('The selected release has invalid update metadata.');
       }
@@ -37,21 +47,31 @@ function createAppUpdates(enabled, notify, currentVersion) {
         return;
       }
       set('downloading', result.updateInfo.version, Boolean(version));
-      await updater.downloadUpdate(result.cancellationToken);
+      token = result.cancellationToken;
+      updater.on('download-progress', progress);
+      await updater.downloadUpdate(token);
+      if (signal?.aborted) return;
       prepared = updater;
       set('ready', result.updateInfo.version, Boolean(version));
     } catch (error) {
+      if (signal?.aborted) return;
       set('error', version, Boolean(version));
       if (version) throw new Error('Could not download Perona ' + version + '. Choose a version and try again.');
+    } finally {
+      updater.removeListener('download-progress', progress);
+      signal?.removeEventListener('abort', abort);
     }
   }
 
   const busy = () => ['checking', 'downloading', 'installing'].includes(status.state);
   return {
     status: () => status,
-    async check(download = true) {
-      if (status.state === 'unavailable' || status.state === 'ready' || busy()) return;
-      await prepare(autoUpdater, undefined, download);
+    restoreReady() {
+      if (status.state === 'installing') set('ready', status.version, status.downgrade);
+    },
+    async check(download = true, signal) {
+      if (signal?.aborted || status.state === 'unavailable' || status.state === 'ready' || busy()) return;
+      await prepare(autoUpdater, undefined, download, signal);
     },
     async earlierVersions() {
       if (!enabled || !stableVersion.test(currentVersion) || busy()) return [];

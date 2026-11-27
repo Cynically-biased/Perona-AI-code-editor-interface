@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('desk', {
   chooseGameEngine: id => ipcRenderer.invoke('game-engine-choose', id),
   saveGameEngine: (id, profile) => ipcRenderer.invoke('game-engine-save', id, profile),
   launchGameEngine: (id, action) => ipcRenderer.invoke('game-engine-launch', id, action),
+  onGameEngineRunError: callback => ipcRenderer.on('game-engine-run-error', (_event, ...args) => callback(...args)),
   stopGameEngine: id => ipcRenderer.invoke('game-engine-stop', id),
   copyTerminalText: text => ipcRenderer.invoke('terminal-copy', text),
   readTerminalClipboard: () => ipcRenderer.invoke('terminal-paste'),

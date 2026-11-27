@@ -120,7 +120,7 @@ function createGameEngines(profileFolder) {
     }
   }
 
-  async function launch(folder, action) {
+  async function launch(folder, action, onRunError = () => {}) {
     if (!actions.includes(action)) throw new Error('Unknown game engine action.');
     const profile = await load(folder);
     if (!profile.executable) throw new Error('Configure the game engine for this project first.');
@@ -132,7 +132,7 @@ function createGameEngines(profileFolder) {
     if (action !== 'open' && jobs.has(id)) throw new Error('Stop the current engine task first.');
     const child = spawn(executable, args, {
       cwd: folder, shell: false, detached: action === 'open',
-      stdio: action === 'build' ? ['ignore', 'pipe', 'pipe'] : 'ignore',
+      stdio: action === 'open' ? 'ignore' : ['ignore', 'pipe', 'pipe'],
       windowsHide: action === 'build'
     });
     if (action === 'open') {
@@ -143,7 +143,8 @@ function createGameEngines(profileFolder) {
       child.unref();
       return;
     }
-    jobs.set(id, child);
+    const job = { child, stopped: false };
+    jobs.set(id, job);
     let output = '';
     for (const stream of [child.stdout, child.stderr]) {
       stream?.setEncoding('utf8');
@@ -152,10 +153,14 @@ function createGameEngines(profileFolder) {
     const finished = new Promise((resolve, reject) => {
       child.once('error', reject);
       child.once('close', (code, signal) => resolve({ code, signal, output }));
-    }).finally(() => { if (jobs.get(id) === child) jobs.delete(id); });
+    }).finally(() => { if (jobs.get(id) === job) jobs.delete(id); });
     if (action === 'build') return finished;
-    // The game window has its own lifetime, but remains stoppable from Perona.
-    finished.catch(() => {});
+    finished.then(({ code, signal, output }) => {
+      if (job.stopped || code === 0) return;
+      const reason = signal ? 'ended with signal ' + signal : 'exited with code ' + code;
+      const details = output.trim().slice(-2000);
+      onRunError('Run Project ' + reason + '.' + (details ? '\n' + details : ''));
+    }, () => {}); // Startup errors are returned by launch below.
     await new Promise((resolve, reject) => {
       child.once('spawn', resolve);
       child.once('error', reject);
@@ -164,8 +169,18 @@ function createGameEngines(profileFolder) {
 
   return {
     load, choose, save, launch, detectPlaytest,
-    stop(folder) { return jobs.get(key(folder))?.kill() ?? false; },
-    stopAll() { for (const child of jobs.values()) child.kill(); }
+    stop(folder) {
+      const job = jobs.get(key(folder));
+      if (!job || !job.child.kill()) return false;
+      job.stopped = true;
+      return true;
+    },
+    stopAll() {
+      for (const job of jobs.values()) {
+        job.stopped = true;
+        job.child.kill();
+      }
+    }
   };
 }
 

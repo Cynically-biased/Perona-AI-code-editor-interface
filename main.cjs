@@ -44,9 +44,14 @@ let preview;
 let nativePlaytest;
 const gameEngines = createGameEngines(path.join(app.getPath('userData'), 'game-engines'));
 const playtestExecutables = new Map();
+const pendingPlaytests = new Map();
 let previewRequest = 0;
+let startupUpdateStatus;
 const appUpdates = createAppUpdates(app.isPackaged && process.platform === 'win32',
-  status => send('app-update-status', status), app.getVersion());
+  status => {
+    startupUpdateStatus?.(status);
+    send('app-update-status', status);
+  }, app.getVersion());
 
 function findExecutable(name) {
   const options = { windowsHide: true, encoding: 'utf8' };
@@ -627,7 +632,8 @@ register('git-create-page', provider => {
 register('preview-suggest', id => suggestPreview(projectFor(id).cwd));
 register('game-engine-load', id => gameEngines.load(projectFor(id).cwd));
 register('game-engine-save', (id, profile) => gameEngines.save(projectFor(id).cwd, profile));
-register('game-engine-launch', (id, action) => gameEngines.launch(projectFor(id).cwd, action));
+register('game-engine-launch', (id, action) =>
+  gameEngines.launch(projectFor(id).cwd, action, message => send('game-engine-run-error', id, message)));
 register('game-engine-stop', id => gameEngines.stop(projectFor(id).cwd));
 register('game-engine-choose', async id => {
   const { cwd } = projectFor(id);
@@ -677,7 +683,7 @@ register('preview-choose-playtest', async id => {
   const executable = await choosePlaytestExecutable(projectFor(id).cwd);
   return executable && path.basename(executable);
 });
-register('preview-start-playtest', async (id, options) => {
+async function startProjectPlaytest(id, options, request) {
   const folder = projectFor(id).cwd;
   const source = options?.source;
   const docked = options?.window !== 'external';
@@ -685,6 +691,7 @@ register('preview-start-playtest', async (id, options) => {
   let executable = source === 'engine' ? undefined : playtestExecutables.get(folder);
   const seconds = Number.isInteger(wait) && wait >= 5 && wait <= 60 ? wait : 12;
   const launch = async (file, cwd, name, args = []) => {
+    if (pendingPlaytests.get(id) !== request || window.isDestroyed()) return null;
     if (projectFor(id).cwd !== folder) throw new Error('The active project changed before playtest started.');
     await nativePlaytest.start(id, file, cwd, seconds, args, docked);
     return { name, docked };
@@ -704,12 +711,25 @@ register('preview-start-playtest', async (id, options) => {
       if (error.code !== 'ENOENT') throw error;
       throw new Error('The game executable is missing. Choose another .exe inside this project.');
     }
-  } else executable = await choosePlaytestExecutable(folder);
+  } else if (pendingPlaytests.get(id) === request) executable = await choosePlaytestExecutable(folder);
   if (!executable) return null;
   return launch(executable, path.dirname(executable), path.basename(executable));
+}
+register('preview-start-playtest', async (id, options) => {
+  if (pendingPlaytests.has(id)) throw new Error('This playtest is already starting.');
+  const request = {};
+  pendingPlaytests.set(id, request);
+  try {
+    return await startProjectPlaytest(id, options, request);
+  } finally {
+    if (pendingPlaytests.get(id) === request) pendingPlaytests.delete(id);
+  }
 });
 register('preview-playtest-layout', (id, bounds) => nativePlaytest.layout(id, bounds));
-register('preview-stop-playtest', id => nativePlaytest.stop(id));
+register('preview-stop-playtest', id => {
+  pendingPlaytests.delete(id);
+  return nativePlaytest.stop(id);
+});
 register('preview-show', async (id, url) => {
   projectFor(id);
   const request = ++previewRequest;
@@ -772,9 +792,89 @@ register('window-control', action => {
 
 app.setAppUserModelId('Perona.Desktop');
 if (!app.requestSingleInstanceLock()) app.quit();
-else app.whenReady().then(() => {
+else app.whenReady().then(async () => {
   workspace = openWorkspace(app.getPath('userData'));
   registerInterface(__dirname);
+  if (appUpdates.status().state === 'unavailable') {
+    openEditor();
+    return;
+  }
+  const splash = new BrowserWindow({
+    title: 'Starting Perona', icon: path.join(__dirname, 'perona-eb05.ico'),
+    width: 370, height: 200, resizable: false, maximizable: false, frame: false, show: false,
+    backgroundColor: '#21141d', webPreferences: { sandbox: true }
+  });
+  splash.webContents.on('will-navigate', event => event.preventDefault());
+  splash.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  let installing = false;
+  try {
+    await splash.loadURL('perona://app/startup.html');
+    if (splash.isDestroyed()) return;
+    const preference = await splash.webContents.executeJavaScript(
+      "try { JSON.parse(localStorage.getItem('perona-settings'))?.updates } catch { undefined }"
+    );
+    if (preference !== 'manual' && !splash.isDestroyed()) {
+      splash.show();
+      installing = await checkStartupUpdate(splash, preference !== 'check');
+    }
+  } catch {
+    // The installed editor remains available when startup update checks fail.
+  }
+  if (installing || splash.isDestroyed()) return;
+  openEditor();
+  splash.destroy();
+});
+
+async function checkStartupUpdate(splash, download) {
+  const controller = new AbortController();
+  let timer;
+  let releaseWait;
+  const timeout = new Promise(resolve => { releaseWait = resolve; });
+  const cancel = () => { controller.abort(); releaseWait(); };
+  splash.once('closed', cancel);
+  startupUpdateStatus = ({ state, version, progress }) => {
+    clearTimeout(timer);
+    if (state === 'checking' || state === 'downloading') {
+      timer = setTimeout(cancel, state === 'checking' ? 15000 : 60000);
+    }
+    if (splash.isDestroyed()) return;
+    const label = state === 'downloading' ? 'Downloading Perona ' + version + '…'
+      : state === 'installing' || state === 'ready' ? 'Installing update…'
+      : state === 'error' ? 'Update check unavailable. Opening Perona…'
+      : state === 'checking' ? 'Checking for updates…' : 'Opening Perona…';
+    const value = Number.isFinite(progress) ? Math.max(0, Math.min(100, progress)) : null;
+    splash.webContents.executeJavaScript(
+      '(() => { document.querySelector("#startup-status").textContent = ' + JSON.stringify(label) + ';'
+      + 'const bar = document.querySelector("progress");'
+      + (value === null ? 'bar.removeAttribute("value");' : 'bar.value = ' + value + ';')
+      + '})()'
+    ).catch(() => {});
+  };
+  try {
+    await Promise.race([appUpdates.check(download, controller.signal), timeout]);
+    if (controller.signal.aborted || appUpdates.status().state !== 'ready') return false;
+    return await new Promise(resolve => {
+      const quitting = () => { clearTimeout(fallback); resolve(true); };
+      const fallback = setTimeout(() => {
+        app.removeListener('before-quit', quitting);
+        appUpdates.restoreReady();
+        resolve(false);
+      }, 3500);
+      app.once('before-quit', quitting);
+      try { appUpdates.install(); } catch {
+        clearTimeout(fallback);
+        app.removeListener('before-quit', quitting);
+        resolve(false);
+      }
+    });
+  } finally {
+    clearTimeout(timer);
+    startupUpdateStatus = undefined;
+    splash.removeListener('closed', cancel);
+  }
+}
+
+function openEditor() {
   window = new BrowserWindow({
     title: 'Perona', icon: path.join(__dirname, 'perona-eb05.ico'),
     width: 1280, height: 800, minWidth: 520, minHeight: 360,
@@ -789,6 +889,7 @@ else app.whenReady().then(() => {
   preview = createPreview(window, (owner, update) => send('preview-update', owner, update));
   nativePlaytest = createNativePlaytest(window, (id, message) => send('preview-playtest-ended', id, message));
   window.on('close', event => {
+    pendingPlaytests.clear();
     if (!nativePlaytest.active) return;
     event.preventDefault();
     nativePlaytest.stop().then(() => {
@@ -809,12 +910,13 @@ else app.whenReady().then(() => {
   window.webContents.on('will-navigate', event => event.preventDefault());
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.loadURL('perona://app/index.html');
-});
+}
 
 app.on('second-instance', () => {
-  if (!window || window.isDestroyed()) return;
-  if (window.isMinimized()) window.restore();
-  window.focus();
+  const active = window ?? BrowserWindow.getAllWindows()[0];
+  if (!active || active.isDestroyed()) return;
+  if (active.isMinimized()) active.restore();
+  active.focus();
 });
 
 app.on('window-all-closed', () => app.quit());
