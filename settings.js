@@ -23,9 +23,15 @@ let shortcutDraft = {};
 let recording;
 const shortcutStatus = settingsInput('shortcut-status');
 const shortcutList = settingsInput('shortcut-list');
+const previewShortcutDefaults = {
+  'preview.refresh': { label: 'F5', signature: '0:F5' },
+  'preview.refresh-alt': { label: 'Ctrl+R', signature: '1:KeyR' }
+};
 const settingsCategories = [...settingsDialog.querySelectorAll('[data-settings-category]')];
 const settingsPanels = [...settingsDialog.querySelectorAll('[data-settings-panel]')];
 const editorShortcutRows = [
+  ['preview.refresh', 'Refresh Preview', 'Reload the focused website preview without cache.'],
+  ['preview.refresh-alt', 'Refresh Preview (alternate)', 'A second shortcut for the same Preview action.'],
   ['perona.save', 'Save file', 'Write your changes to the project file.'],
   ['undo', 'Undo', 'Reverse the last edit.'],
   ['redo', 'Redo', 'Restore an edit you undid.'],
@@ -93,6 +99,9 @@ function applyEditorShortcuts() {
 }
 
 function currentShortcut(command) {
+  if (Object.hasOwn(previewShortcutDefaults, command)) {
+    return (shortcutDraft[command] ?? previewShortcutDefaults[command]).label;
+  }
   if (Object.hasOwn(shortcutDraft, command)) {
     return shortcutDraft[command] ? shortcutLabel(shortcutDraft[command]) : 'Disabled';
   }
@@ -102,7 +111,8 @@ function currentShortcut(command) {
 function renderShortcutRows() {
   shortcutList.replaceChildren();
   for (const [command, label, description] of editorShortcutRows) {
-    if (!shortcutCatalog.has(command)) continue;
+    const previewShortcut = Object.hasOwn(previewShortcutDefaults, command);
+    if (!previewShortcut && !shortcutCatalog.has(command)) continue;
     const row = node('div', '', 'settings-row settings-shortcut-row');
     const detail = node('span', label);
     detail.append(node('small', description));
@@ -151,7 +161,11 @@ function renderShortcutRows() {
         shortcutStatus.textContent = 'That shortcut is already used by ' + conflict[1] + '.';
         return;
       }
-      shortcutDraft[command] = key;
+      if (previewShortcut && !/^[a-zA-Z][a-zA-Z0-9]{0,31}$/.test(event.code)) {
+        shortcutStatus.textContent = 'That key cannot be assigned to Preview refresh.';
+        return;
+      }
+      shortcutDraft[command] = previewShortcut ? { label: shortcutLabel(key), signature: previewKeySignature(event) } : key;
       recording = undefined;
       shortcutStatus.textContent = label + ' set to ' + shortcutLabel(key) + '.';
       update();
@@ -169,10 +183,22 @@ function renderShortcutRows() {
   }
 }
 
+function previewKeySignature(event) {
+  const modifiers = Number(event.ctrlKey) + Number(event.shiftKey) * 2
+    + Number(event.altKey) * 4 + Number(event.metaKey) * 8;
+  return modifiers + ':' + event.code;
+}
+
+function previewRefreshBindings() {
+  return Object.entries(previewShortcutDefaults).map(([command, defaults]) =>
+    appPreferences.shortcuts[command]?.signature ?? defaults.signature);
+}
+
 function applySettingsDisplay() {
   document.getElementById('perona-pet').hidden = localStorage.getItem('perona-hide-pet') === 'true';
   document.querySelector('.agent-usage').hidden = localStorage.getItem('perona-hide-usage') === 'true';
   window.desk.setInterfaceZoom(appPreferences.zoom).catch(setError);
+  window.desk.setPreviewRefreshBindings(previewRefreshBindings()).catch(setError);
 }
 
 function openSettings() {

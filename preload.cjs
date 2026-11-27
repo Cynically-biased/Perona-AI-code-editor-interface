@@ -51,6 +51,8 @@ contextBridge.exposeInMainWorld('desk', {
   previewHide: () => ipcRenderer.invoke('preview-hide'),
   previewStopGame: id => ipcRenderer.invoke('preview-stop-game', id),
   previewReload: id => ipcRenderer.invoke('preview-reload', id),
+  setPreviewRefreshBindings: bindings => ipcRenderer.invoke('preview-refresh-bindings', bindings),
+  onPreviewRefreshShortcut: callback => ipcRenderer.on('preview-refresh-shortcut', () => callback()),
   previewBack: id => ipcRenderer.invoke('preview-back', id),
   onPreview: callback => ipcRenderer.on('preview-update', (_event, ...args) => callback(...args)),
   xamppStatus: () => ipcRenderer.invoke('xampp-status'),

@@ -91,7 +91,7 @@ function createPreview(window, notify) {
         contents.loadURL('about:blank').catch(() => {});
       }
     },
-    reload(id) { if (id === owner) contents?.reload(); },
+    reload(id) { if (id === owner) contents?.reloadIgnoringCache(); },
     back(id) {
       if (id === owner && contents?.navigationHistory.canGoBack()) contents.navigationHistory.goBack();
     }

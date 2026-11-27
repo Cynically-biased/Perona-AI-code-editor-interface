@@ -162,6 +162,22 @@ function hidePreview() {
   visiblePreview = undefined;
 }
 
+function refreshBrowserPreview(session) {
+  if (!session || session.view.browserStopped || desktopPlaytest?.session === session) return;
+  browserMessage(session, '');
+  window.desk.previewReload(session.id).catch(setError);
+}
+
+window.desk.onPreviewRefreshShortcut(() => refreshBrowserPreview(visiblePreview));
+document.addEventListener('keydown', event => {
+  const session = visiblePreview;
+  if (!session || event.isComposing || !session.view.previewPanel.contains(event.target)
+      || !previewRefreshBindings().includes(previewKeySignature(event))) return;
+  event.preventDefault();
+  event.stopPropagation();
+  if (!event.repeat) refreshBrowserPreview(session);
+}, true);
+
 function browserMessage(session, text) {
   const element = session.view.previewPanel.querySelector('.browser-message');
   if (element.textContent !== text) element.textContent = text;
@@ -376,11 +392,7 @@ function configureTools(session) {
     syncPreview();
     if (event.submitter === play && visiblePreview === session) previewGuest.focus();
   });
-  toolbar.querySelector('.browser-refresh').addEventListener('click', () => {
-    if (view.browserStopped || desktopPlaytest?.session === session) return;
-    browserMessage(session, '');
-    window.desk.previewReload(session.id).catch(setError);
-  });
+  toolbar.querySelector('.browser-refresh').addEventListener('click', () => refreshBrowserPreview(session));
   toolbar.querySelector('.browser-back').addEventListener('click', () => {
     if (view.browserStopped || desktopPlaytest?.session === session) return;
     browserMessage(session, '');

@@ -46,6 +46,7 @@ const gameEngines = createGameEngines(path.join(app.getPath('userData'), 'game-e
 const playtestExecutables = new Map();
 const pendingPlaytests = new Map();
 let previewRequest = 0;
+let previewRefreshBindings = ['0:F5', '1:KeyR'];
 let startupUpdateStatus;
 const appUpdates = createAppUpdates(app.isPackaged && process.platform === 'win32',
   status => {
@@ -745,6 +746,13 @@ register('preview-stop-game', id => {
   preview.stop(id);
 });
 register('preview-reload', id => preview?.reload(id));
+register('preview-refresh-bindings', bindings => {
+  if (!Array.isArray(bindings) || bindings.length !== 2
+      || !bindings.every(binding => typeof binding === 'string' && /^(?:[0-9]|1[0-5]):[a-z][a-z0-9]{0,31}$/i.test(binding))) {
+    throw new Error('Invalid Preview refresh shortcuts.');
+  }
+  previewRefreshBindings = bindings;
+});
 register('preview-back', id => preview?.back(id));
 register('xampp-status', async () => ({ root: xampp.root, services: await xampp.inspect() }));
 register('xampp-control', async (id, action) => xampp.control(id, action));
@@ -768,6 +776,12 @@ function handleInterfaceZoomShortcut(event, input) {
   if (!grow && !shrink) return;
   event.preventDefault();
   if (!input.isAutoRepeat) send('settings-zoom-step', grow ? 1 : -1);
+}
+
+function previewInputSignature(input) {
+  const modifiers = Number(Boolean(input.control)) + Number(Boolean(input.shift)) * 2
+    + Number(Boolean(input.alt)) * 4 + Number(Boolean(input.meta)) * 8;
+  return modifiers + ':' + input.code;
 }
 
 register('window-control', action => {
@@ -883,8 +897,18 @@ function openEditor() {
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), sandbox: true, webviewTag: true }
   });
   window.webContents.on('before-input-event', handleInterfaceZoomShortcut);
+  window.webContents.on('before-input-event', (_event, input) => {
+    const signature = previewInputSignature(input);
+    window.webContents.setIgnoreMenuShortcuts(['0:F5', '1:KeyR'].includes(signature)
+      || previewRefreshBindings.includes(signature));
+  });
   window.webContents.on('did-attach-webview', (_event, guest) => {
     guest.on('before-input-event', handleInterfaceZoomShortcut);
+    guest.on('before-input-event', (event, input) => {
+      if (input.type !== 'keyDown' || input.isComposing || !previewRefreshBindings.includes(previewInputSignature(input))) return;
+      event.preventDefault();
+      if (!input.isAutoRepeat) send('preview-refresh-shortcut');
+    });
   });
   preview = createPreview(window, (owner, update) => send('preview-update', owner, update));
   nativePlaytest = createNativePlaytest(window, (id, message) => send('preview-playtest-ended', id, message));
