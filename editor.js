@@ -440,28 +440,42 @@ async function importDroppedFiles(session, folder, files) {
   const { view } = session;
   if (view.fileBusy || !files.length) return;
   view.fileBusy = true;
+  updateEditor(view);
   setError();
   try {
     const result = await window.desk.importProjectFiles(session.id, folder, files);
     if (sessions.get(session.id) !== session) return;
     showView(session, 'files');
+    const replaceable = [];
     for (const conflict of result.conflicts) {
       const relative = [folder, conflict.name].filter(Boolean).join('/');
-      const affected = openFilesUnder(view, relative);
-      if (affected.some(dirty)) {
-        result.skipped++;
-        continue;
-      }
-      const message = relative + ' already exists. Replace ' +
-        (conflict.directory ? 'the entire folder and everything inside it?' : 'the existing file?') +
-        ' The original will be moved to the Recycle Bin when possible.';
-      if (!await confirmAction('Replace ' + (conflict.directory ? 'folder?' : 'file?'), message, 'Replace', 'Skip')) continue;
+      if (openFilesUnder(view, relative).some(dirty)) result.skipped++;
+      else replaceable.push({ conflict, relative });
+    }
+    if (replaceable.length) {
+      const count = replaceable.length;
+      const message = (count === 1 ? replaceable[0].relative + ' already exists.'
+        : count + ' items already exist in the destination folder.')
+        + (replaceable.some(({ conflict }) => conflict.directory) ? ' Replacing a folder replaces all of its contents.' : '')
+        + ' Originals will be moved to the Recycle Bin when possible.';
+      const replace = await confirmAction(count === 1 ? 'Replace existing item?' : 'Replace all ' + count + ' existing items?',
+        message, count === 1 ? 'Replace' : 'Replace all', count === 1 ? 'Skip' : 'Skip all');
       if (sessions.get(session.id) !== session) return;
-      const replaced = await window.desk.importProjectFiles(session.id, folder,
-        [files[conflict.index]], { name: conflict.name, revision: conflict.revision });
-      if (replaced.copied) closeFileTabs(session, affected);
-      result.skipped += replaced.skipped + replaced.conflicts.length;
-      result.recovery.push(...replaced.recovery);
+      if (replace) {
+        for (const { conflict, relative } of replaceable) {
+          const affected = openFilesUnder(view, relative);
+          if (affected.some(dirty)) {
+            result.skipped++;
+            continue;
+          }
+          const replaced = await window.desk.importProjectFiles(session.id, folder,
+            [files[conflict.index]], { name: conflict.name, revision: conflict.revision });
+          if (sessions.get(session.id) !== session) return;
+          if (replaced.copied) closeFileTabs(session, affected);
+          result.skipped += replaced.skipped + replaced.conflicts.length;
+          result.recovery.push(...replaced.recovery);
+        }
+      }
     }
     await loadFiles(session);
     if (result.skipped || result.recovery.length) {
@@ -474,6 +488,7 @@ async function importDroppedFiles(session, folder, files) {
     setError(error);
   } finally {
     view.fileBusy = false;
+    if (!view.editorDisposed) updateEditor(view);
   }
 }
 
